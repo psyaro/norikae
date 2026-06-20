@@ -425,27 +425,47 @@ function findKRoutes(fromName, toName) {
   addCrossTransferIds(fromName, srcSet);
   addCrossTransferIds(toName, dstSet);
 
-  const MAX = 30;
   const results = [];
   const seenSigs = new Set();
-  const tried = new Set();
 
   const first = dijkstraP(srcSet, dstSet, new Map());
   if (!first) return [];
   addResult(first);
 
-  for (let ri = 0; ri < results.length && results.length < MAX; ri++) {
-    const route = results[ri];
-    for (let i = 0; i < route.path.length - 1; i++) {
-      if (results.length >= MAX) break;
-      const u = route.path[i], v = route.path[i+1];
-      if (grp[u] === grp[v]) continue;
-      const key = Math.min(u,v)*1000+Math.max(u,v);
-      if (tried.has(key)) continue;
-      tried.add(key);
+  // Phase 1: single-edge blocking from each found route
+  const tried1 = new Set();
+  for (let ri = 0; ri < results.length; ri++) {
+    const edges = realEdges(results[ri].path);
+    for (const key of edges) {
+      if (tried1.has(key)) continue;
+      tried1.add(key);
       const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]));
       if (alt) addResult(alt);
     }
+  }
+
+  // Phase 2: block pairs of edges from each route to find more diverse candidates
+  const tried2 = new Set();
+  for (let ri = 0; ri < Math.min(results.length, 10); ri++) {
+    const edges = realEdges(results[ri].path);
+    for (let a = 0; a < edges.length; a++) {
+      for (let b = a + 1; b < edges.length; b++) {
+        const pk = edges[a] + '|' + edges[b];
+        if (tried2.has(pk)) continue;
+        tried2.add(pk);
+        const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]));
+        if (alt) addResult(alt);
+      }
+    }
+  }
+
+  function realEdges(path) {
+    const keys = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const u = path[i], v = path[i+1];
+      if (grp[u] !== grp[v]) keys.push(Math.min(u,v)*1000+Math.max(u,v));
+    }
+    return keys;
   }
 
   function addResult(route) {
