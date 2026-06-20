@@ -388,7 +388,8 @@ function routeSig(path) {
   return segs.join('>');
 }
 
-function dijkstraP(srcSet, dstSet, penalty) {
+function dijkstraP(srcSet, dstSet, penalty, transferCost) {
+  transferCost = transferCost || 0;
   const dist = new Float64Array(N).fill(Infinity);
   const real = new Float64Array(N).fill(Infinity);
   const prev = new Int32Array(N).fill(-1);
@@ -399,7 +400,9 @@ function dijkstraP(srcSet, dstSet, penalty) {
     if (d > dist[u]) continue;
     for (const {to: v, w} of adj[u]) {
       const key = Math.min(u,v)*1000+Math.max(u,v);
-      const nd = d + w + (penalty.get(key)||0);
+      // w===0 edge = transfer connection (same/cross-name station)
+      const tc = (w === 0) ? transferCost : 0;
+      const nd = d + w + tc + (penalty.get(key)||0);
       if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
     }
   }
@@ -428,34 +431,31 @@ function findKRoutes(fromName, toName) {
   const results = [];
   const seenSigs = new Set();
 
-  const first = dijkstraP(srcSet, dstSet, new Map());
-  if (!first) return [];
-  addResult(first);
+  // Search with several transfer-cost levels:
+  // tc=0 → pure shortest distance (may zigzag)
+  // higher tc → fewer transfers preferred (allows longer detours with fewer changes)
+  const TC_LEVELS = [0, 0.6, 1.5, 4, 10, 30];
+  for (const tc of TC_LEVELS) {
+    const base = dijkstraP(srcSet, dstSet, new Map(), tc);
+    if (!base) continue;
+    addResult(base);
+    // Single-edge blocking to find near alternatives at this transfer-cost level
+    const edges = realEdges(base.path);
+    for (const key of edges) {
+      const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc);
+      if (alt) addResult(alt);
+    }
+  }
 
-  // Phase 1: single-edge blocking from each found route
+  // Extra diversity: single-edge blocking on all found routes at tc=0
   const tried1 = new Set();
   for (let ri = 0; ri < results.length; ri++) {
     const edges = realEdges(results[ri].path);
     for (const key of edges) {
       if (tried1.has(key)) continue;
       tried1.add(key);
-      const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]));
+      const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), 0.6);
       if (alt) addResult(alt);
-    }
-  }
-
-  // Phase 2: block pairs of edges from each route to find more diverse candidates
-  const tried2 = new Set();
-  for (let ri = 0; ri < Math.min(results.length, 10); ri++) {
-    const edges = realEdges(results[ri].path);
-    for (let a = 0; a < edges.length; a++) {
-      for (let b = a + 1; b < edges.length; b++) {
-        const pk = edges[a] + '|' + edges[b];
-        if (tried2.has(pk)) continue;
-        tried2.add(pk);
-        const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]));
-        if (alt) addResult(alt);
-      }
     }
   }
 
