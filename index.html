@@ -17,6 +17,9 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
   width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
   font-size: 1rem; transition: border-color 0.2s; background: #fff; appearance: auto;
 }
+.input-group .clear-btn { width: 100%; padding: 12px; background: #fff; color: #0089c7; border: 1px solid #0089c7;
+  border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.input-group .clear-btn:hover { background: #f0f2f5; }
 .input-group select:disabled { color: #aaa; background: #f8f8f8; }
 .input-group input:focus, .input-group select:focus { border-color: #0089c7; outline: none; }
 .swap-row { display: flex; justify-content: center; margin: -4px 0 8px; }
@@ -66,6 +69,7 @@ details summary:hover { text-decoration: underline; }
 .sort-count { font-size: 0.75rem; color: #999; margin-left: auto; }
 .route-stops { font-size: 0.75rem; color: #888; }
 .far-note { font-size: 0.7rem; color: #d32f2f; margin-top: 2px; }
+.route-warn { font-size: 0.7rem; color: #c77; margin-top: 4px; }
 .error { color: #d32f2f; text-align: center; padding: 12px; font-size: 0.9rem; }
 .fare-breakdown { font-size: 0.8rem; color: #666; margin-top: 2px; }
 .fare-breakdown b { color: #333; }
@@ -75,27 +79,31 @@ optgroup { font-weight: 700; }
 </head>
 <body>
 <div class="container">
-  <h1>東京メトロ・都営地下鉄 最短経路探索</h1>
-  <p class="subtitle">営業キロに基づく経路探索（メトロ区間のみ運賃計算）</p>
+  <h1>東京メトロ・都営地下鉄・JR 最短経路探索</h1>
+  <p class="subtitle">営業キロに基づく経路探索（メトロ・JR区間の運賃を計算／都営区間は運賃計算なし）</p>
   <div class="card">
     <div class="input-group">
-      <label>出発路線</label>
-      <select id="from-line" onchange="updateStations('from')"><option value="">路線を選択</option></select>
+      <label>出発路線（任意）</label>
+      <select id="from-line" onchange="updateStations('from')"><option value="">すべての路線</option></select>
     </div>
     <div class="input-group">
-      <label>出発駅</label>
-      <select id="from" disabled><option value="">先に路線を選択</option></select>
+      <label>出発駅（入力して検索）</label>
+      <input type="text" id="from" list="from-stations" placeholder="駅名を入力…" autocomplete="off">
+      <datalist id="from-stations"></datalist>
+      <button class="clear-btn" onclick="clearStations('from')" title="クリア">×</button>
     </div>
     <div class="swap-row">
       <button class="swap-btn" onclick="swapStations()" title="入れ替え">&#8693;</button>
     </div>
     <div class="input-group">
-      <label>到着路線</label>
-      <select id="to-line" onchange="updateStations('to')"><option value="">路線を選択</option></select>
+      <label>到着路線（任意）</label>
+      <select id="to-line" onchange="updateStations('to')"><option value="">すべての路線</option></select>
     </div>
     <div class="input-group">
-      <label>到着駅</label>
-      <select id="to" disabled><option value="">先に路線を選択</option></select>
+      <label>到着駅（入力して検索）</label>
+      <input type="text" id="to" list="to-stations" placeholder="駅名を入力…" autocomplete="off">
+      <datalist id="to-stations"></datalist>
+      <button class="clear-btn" onclick="clearStations('to')" title="クリア">×</button>
     </div>
     <button class="calc-btn" onclick="calculate()">経路を検索</button>
   </div>
@@ -118,10 +126,22 @@ const LINES = {
   I: { name: "三田線", color: "#0079C2" },
   S: { name: "新宿線", color: "#6CBB5A" },
   E: { name: "大江戸線", color: "#B6007A" },
+  JY: { name: "山手線", color: "#9ACD32" },
+  JC: { name: "中央線快速", color: "#F15A22" },
+  JB: { name: "総武線各停", color: "#FFD400" },
+  JJ: { name: "常磐線", color: "#00B261" },
 };
 
 const METRO_LINES = new Set(["G","M","Mb","H","T","C","Y","Z","N","F"]);
 function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
+const TOEI_LINES = new Set(["A","I","S","E"]);
+const JR_LINES = new Set(["JY","JC","JB","JJ"]);
+function operatorOf(lineCode) {
+  if (METRO_LINES.has(lineCode)) return "metro";
+  if (TOEI_LINES.has(lineCode)) return "toei";
+  if (JR_LINES.has(lineCode)) return "jr";
+  return "other";
+}
 
 const S = [
 // 銀座線 0-18
@@ -214,6 +234,35 @@ const S = [
 [276,"西新宿五丁目","E"],[277,"中野坂上","E"],[278,"東中野","E"],[279,"中井","E"],
 [280,"落合南長崎","E"],[281,"新江古田","E"],[282,"練馬","E"],[283,"豊島園","E"],
 [284,"練馬春日町","E"],[285,"光が丘","E"],
+// ===== JR =====
+[286,"東京","JY"],[287,"神田","JY"],[288,"秋葉原","JY"],[289,"御徒町","JY"],
+[290,"上野","JY"],[291,"鶯谷","JY"],[292,"日暮里","JY"],[293,"西日暮里","JY"],
+[294,"田端","JY"],[295,"駒込","JY"],[296,"巣鴨","JY"],[297,"大塚","JY"],
+[298,"池袋","JY"],[299,"目白","JY"],[300,"高田馬場","JY"],[301,"新大久保","JY"],
+[302,"新宿","JY"],[303,"代々木","JY"],[304,"原宿","JY"],[305,"渋谷","JY"],
+[306,"恵比寿","JY"],[307,"目黒","JY"],[308,"五反田","JY"],[309,"大崎","JY"],
+[310,"品川","JY"],[311,"高輪ゲートウェイ","JY"],[312,"田町","JY"],[313,"浜松町","JY"],
+[314,"新橋","JY"],[315,"有楽町","JY"],[316,"東京","JC"],[317,"神田","JC"],
+[318,"御茶ノ水","JC"],[319,"四ツ谷","JC"],[320,"新宿","JC"],[321,"中野","JC"],
+[322,"高円寺","JC"],[323,"阿佐ケ谷","JC"],[324,"荻窪","JC"],[325,"西荻窪","JC"],
+[326,"吉祥寺","JC"],[327,"三鷹","JC"],[328,"武蔵境","JC"],[329,"東小金井","JC"],
+[330,"武蔵小金井","JC"],[331,"国分寺","JC"],[332,"西国分寺","JC"],[333,"国立","JC"],
+[334,"立川","JC"],[335,"日野","JC"],[336,"豊田","JC"],[337,"八王子","JC"],
+[338,"西八王子","JC"],[339,"高尾","JC"],[340,"三鷹","JB"],[341,"吉祥寺","JB"],
+[342,"西荻窪","JB"],[343,"荻窪","JB"],[344,"阿佐ケ谷","JB"],[345,"高円寺","JB"],
+[346,"中野","JB"],[347,"東中野","JB"],[348,"大久保","JB"],[349,"新宿","JB"],
+[350,"代々木","JB"],[351,"千駄ケ谷","JB"],[352,"信濃町","JB"],[353,"四ツ谷","JB"],
+[354,"市ケ谷","JB"],[355,"飯田橋","JB"],[356,"水道橋","JB"],[357,"御茶ノ水","JB"],
+[358,"秋葉原","JB"],[359,"浅草橋","JB"],[360,"両国","JB"],[361,"錦糸町","JB"],
+[362,"亀戸","JB"],[363,"平井","JB"],[364,"新小岩","JB"],[365,"小岩","JB"],
+[366,"市川","JB"],[367,"本八幡","JB"],[368,"下総中山","JB"],[369,"西船橋","JB"],
+[370,"船橋","JB"],[371,"東船橋","JB"],[372,"津田沼","JB"],[373,"幕張本郷","JB"],
+[374,"幕張","JB"],[375,"新検見川","JB"],[376,"稲毛","JB"],[377,"西千葉","JB"],
+[378,"千葉","JB"],[379,"上野","JJ"],[380,"日暮里","JJ"],[381,"三河島","JJ"],
+[382,"南千住","JJ"],[383,"北千住","JJ"],[384,"綾瀬","JJ"],[385,"亀有","JJ"],
+[386,"金町","JJ"],[387,"松戸","JJ"],[388,"北松戸","JJ"],[389,"馬橋","JJ"],
+[390,"新松戸","JJ"],[391,"北小金","JJ"],[392,"南柏","JJ"],[393,"柏","JJ"],
+[394,"北柏","JJ"],[395,"我孫子","JJ"],[396,"天王台","JJ"],[397,"取手","JJ"],
 ];
 
 // === EDGES (adjacent stations with 営業キロ) ===
@@ -289,6 +338,14 @@ const EDGES = [
 // 大江戸線（放射部）
 [248,276,0.8],[276,277,1.2],[277,278,1.0],[278,279,0.8],[279,280,1.3],
 [280,281,1.6],[281,282,1.6],[282,283,0.9],[283,284,1.5],[284,285,1.4],
+// JR 山手線 (loop)
+[286,287,1.3],[287,288,0.7],[288,289,1.0],[289,290,0.6],[290,291,1.1],[291,292,1.1],[292,293,0.5],[293,294,0.8],[294,295,1.6],[295,296,0.7],[296,297,1.1],[297,298,1.8],[298,299,1.2],[299,300,0.9],[300,301,1.4],[301,302,1.3],[302,303,0.7],[303,304,1.5],[304,305,1.2],[305,306,1.6],[306,307,1.5],[307,308,1.2],[308,309,0.9],[309,310,2.0],[310,311,0.9],[311,312,1.3],[312,313,1.5],[313,314,1.2],[314,315,1.1],[315,286,0.8],
+// JR 中央線快速
+[316,317,1.3],[317,318,1.3],[318,319,4.0],[319,320,3.7],[320,321,4.4],[321,322,1.4],[322,323,1.2],[323,324,1.4],[324,325,1.9],[325,326,1.9],[326,327,1.6],[327,328,1.6],[328,329,1.7],[329,330,1.7],[330,331,2.3],[331,332,1.4],[332,333,1.7],[333,334,3.0],[334,335,3.3],[335,336,2.3],[336,337,4.3],[337,338,2.4],[338,339,3.3],
+// JR 総武線各停
+[340,341,1.6],[341,342,1.9],[342,343,1.9],[343,344,1.4],[344,345,1.2],[345,346,1.4],[346,347,1.9],[347,348,1.1],[348,349,1.4],[349,350,0.7],[350,351,1.0],[351,352,0.7],[352,353,1.3],[353,354,0.8],[354,355,1.5],[355,356,0.9],[356,357,0.8],[357,358,0.9],[358,359,1.1],[359,360,0.8],[360,361,1.5],[361,362,1.5],[362,363,1.9],[363,364,1.8],[364,365,2.8],[365,366,2.6],[366,367,2.0],[367,368,1.6],[368,369,1.6],[369,370,2.6],[370,371,1.8],[371,372,1.7],[372,373,2.9],[373,374,2.0],[374,375,1.6],[375,376,2.7],[376,377,1.9],[377,378,1.4],
+// JR 常磐線
+[379,380,2.2],[380,381,1.2],[381,382,2.2],[382,383,1.8],[383,384,2.5],[384,385,2.2],[385,386,1.9],[386,387,3.9],[387,388,2.1],[388,389,1.3],[389,390,1.6],[390,391,1.3],[391,392,2.5],[392,393,2.4],[393,394,2.3],[394,395,2.1],[395,396,2.7],[396,397,3.4],
 ];
 
 // === TRANSFER CONNECTIONS (0 km) ===
@@ -309,6 +366,9 @@ const CROSS_TRANSFERS = [
   [234,53],             // 岩本町(S) ↔ 秋葉原(H)
   [207,129],            // 日比谷(I) ↔ 有楽町(Y) ※Wikipedia三田線
   [193,145],            // 人形町(A) ↔ 水天宮前(Z) ※Wikipedia浅草線
+  // JR↔Metro different-name connections
+  [357,100],[318,100], // 御茶ノ水(JR) ↔ 新御茶ノ水(千代田)
+  [289,257],[289,4],[289,52], // 御徒町(JR山手) ↔ 上野御徒町(大江戸)/上野広小路(銀座)/仲御徒町(日比谷)
 ];
 
 // === FARE ZONES (Metro, with barrier-free surcharge, 2023) ===
@@ -325,6 +385,21 @@ function getFare(km) {
     if (km <= z.max) return z;
   }
   return FARE_ZONES[FARE_ZONES.length - 1];
+}
+
+// JR 改定後幹線運賃 (営業キロ → 運賃)
+const JR_FARE_ZONES = [
+  {max:3,ticket:160,ic:155},{max:6,ticket:200,ic:199},{max:10,ticket:210,ic:209},
+  {max:15,ticket:260,ic:253},{max:20,ticket:350,ic:341},{max:25,ticket:440,ic:440},
+  {max:30,ticket:530,ic:528},{max:35,ticket:620,ic:616},{max:40,ticket:720,ic:715},
+  {max:45,ticket:810,ic:803},{max:50,ticket:910,ic:902},{max:60,ticket:1040,ic:1034},
+  {max:70,ticket:1230,ic:1221},{max:80,ticket:1410,ic:1408},{max:90,ticket:1600,ic:1595},
+  {max:100,ticket:1790,ic:1782},{max:120,ticket:2090,ic:2090},{max:140,ticket:2420,ic:2420},
+  {max:160,ticket:2750,ic:2750},{max:180,ticket:3190,ic:3190},{max:200,ticket:3520,ic:3520},
+];
+function getJRFare(km) {
+  for (const z of JR_FARE_ZONES) { if (km <= z.max) return z; }
+  return JR_FARE_ZONES[JR_FARE_ZONES.length - 1];
 }
 
 // === BUILD GRAPH ===
@@ -388,6 +463,7 @@ function routeSig(path) {
   return segs.join('>');
 }
 
+const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
 function dijkstraP(srcSet, dstSet, penalty, transferCost) {
   transferCost = transferCost || 0;
   const dist = new Float64Array(N).fill(Infinity);
@@ -401,7 +477,12 @@ function dijkstraP(srcSet, dstSet, penalty, transferCost) {
     for (const {to: v, w} of adj[u]) {
       const key = Math.min(u,v)*1000+Math.max(u,v);
       // w===0 edge = transfer connection (same/cross-name station)
-      const tc = (w === 0) ? transferCost : 0;
+      let tc = 0;
+      if (w === 0) {
+        tc = transferCost;
+        // Crossing to a different operator incurs a separate fare → heavy search penalty
+        if (operatorOf(S[u][2]) !== operatorOf(S[v][2])) tc += COMPANY_COST;
+      }
       const nd = d + w + tc + (penalty.get(key)||0);
       if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
     }
@@ -483,20 +564,28 @@ function findKRoutes(fromName, toName) {
     r.stops = visited.size;
     const fi = calcRouteFare(r.path);
     r.fareInfo = fi;
-    r.price = fi.totalTicket; // Metro fare only (Toei = free)
+    r.price = fi.totalTicket; // Metro + JR fare (Toei = free)
+    // 会社またぎ回数: operator changes along the path
+    let cross = 0;
+    for (let i = 1; i < r.path.length; i++) {
+      if (operatorOf(S[r.path[i-1]][2]) !== operatorOf(S[r.path[i]][2])) cross++;
+    }
+    r.cross = cross;
+    // おすすめスコア: 距離 + 乗換ペナルティ + 会社またぎペナルティ
+    r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  results.sort((a, b) => a.distance - b.distance || a.transfers - b.transfers);
+  results.sort((a, b) => a.score - b.score);
   return results;
 }
 
 // Cross-name station groups
 const CROSS_NAME_MAP = {
-  "上野広小路": ["仲御徒町","上野御徒町"], "仲御徒町": ["上野広小路","上野御徒町"], "上野御徒町": ["上野広小路","仲御徒町"],
+  "上野広小路": ["仲御徒町","上野御徒町","御徒町"], "仲御徒町": ["上野広小路","上野御徒町","御徒町"], "上野御徒町": ["上野広小路","仲御徒町","御徒町"],
   "虎ノ門": ["虎ノ門ヒルズ"], "虎ノ門ヒルズ": ["虎ノ門"],
   "溜池山王": ["国会議事堂前"], "国会議事堂前": ["溜池山王"],
   "赤坂見附": ["永田町"], "永田町": ["赤坂見附"],
-  "淡路町": ["新御茶ノ水","小川町"], "新御茶ノ水": ["淡路町","小川町"], "小川町": ["淡路町","新御茶ノ水"],
+  "淡路町": ["新御茶ノ水","小川町"], "新御茶ノ水": ["御茶ノ水","淡路町","小川町"], "小川町": ["淡路町","新御茶ノ水"],
   "銀座": ["銀座一丁目"], "銀座一丁目": ["銀座"],
   "人形町": ["水天宮前"], "水天宮前": ["人形町"],
   "築地": ["新富町"], "新富町": ["築地"],
@@ -505,6 +594,8 @@ const CROSS_NAME_MAP = {
   "新宿西口": ["新宿"],
   "東日本橋": ["馬喰横山"], "馬喰横山": ["東日本橋"],
   "岩本町": ["秋葉原"], "秋葉原": ["岩本町"],
+  "御茶ノ水": ["新御茶ノ水"],
+  "御徒町": ["上野御徒町","上野広小路","仲御徒町"],
 };
 function addCrossTransferIds(name, idSet) {
   if (CROSS_NAME_MAP[name]) {
@@ -529,28 +620,33 @@ function getFarNote(nodeA, nodeB) {
   return FAR_NOTES[nodeA+','+nodeB] || '';
 }
 
-// === FARE CALCULATION (Metro sections only) ===
+// === FARE CALCULATION (Metro + JR sections; Toei is free) ===
 function calcRouteFare(path) {
-  // Split path into operator sections (Metro / Toei)
-  if (path.length < 2) return { metroFares: [], totalTicket: 0, totalIC: 0, allMetro: true };
+  // Split path into operator sections (metro / toei / jr / other)
+  if (path.length < 2) return { metroFares: [], totalTicket: 0, totalIC: 0, allMetro: true, hasJR: false, crossCompany: false };
   const sections = [];
   let secStart = 0;
-  let secIsMetro = isMetro(S[path[0]][2]);
+  let secOp = operatorOf(S[path[0]][2]);
   for (let i = 1; i < path.length; i++) {
-    const cur = isMetro(S[path[i]][2]);
-    if (cur !== secIsMetro) {
-      sections.push({ start: secStart, end: i - 1, metro: secIsMetro });
+    const cur = operatorOf(S[path[i]][2]);
+    if (cur !== secOp) {
+      sections.push({ start: secStart, end: i - 1, op: secOp });
       secStart = i;
-      secIsMetro = cur;
+      secOp = cur;
     }
   }
-  sections.push({ start: secStart, end: path.length - 1, metro: secIsMetro });
+  sections.push({ start: secStart, end: path.length - 1, op: secOp });
 
+  // metroFares holds ALL paid fare segments (metro + jr); kept name for display compat
   const metroFares = [];
   let totalTicket = 0, totalIC = 0;
-  let allMetro = true;
+  let paidSections = 0, totalSections = 0;
+  let hasJR = false;
+  const ops = new Set();
   for (const sec of sections) {
-    if (!sec.metro) { allMetro = false; continue; }
+    if (sec.end > sec.start) ops.add(sec.op); // only count operators that actually travel
+    if (sec.op !== "metro" && sec.op !== "jr") continue;
+    totalSections++;
     let dist = 0;
     for (let i = sec.start; i < sec.end; i++) {
       const edge = adj[path[i]].find(e => e.to === path[i + 1]);
@@ -558,17 +654,22 @@ function calcRouteFare(path) {
     }
     dist = Math.round(dist * 10) / 10;
     if (dist > 0) {
-      const fare = getFare(dist);
-      metroFares.push({ dist, fare, from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
+      const fare = sec.op === "jr" ? getJRFare(dist) : getFare(dist);
+      if (sec.op === "jr") hasJR = true;
+      metroFares.push({ dist, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       totalTicket += fare.ticket;
       totalIC += fare.ic;
+      paidSections++;
     }
   }
-  return { metroFares, totalTicket, totalIC, allMetro };
+  // allMetro: single paid section and it's metro and no other operators present
+  const crossCompany = ops.size > 1;
+  const allMetro = (metroFares.length === 1 && metroFares[0].op === "metro" && !crossCompany);
+  return { metroFares, totalTicket, totalIC, allMetro, hasJR, crossCompany };
 }
 
 // === UI ===
-const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E"];
+const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ"];
 const lineStations = {};
 for (const code of LINE_ORDER) {
   const stns = [];
@@ -579,41 +680,71 @@ for (const code of LINE_ORDER) {
   lineStations[code] = stns;
 }
 
-// Populate line selectors with optgroups
+// Populate line selectors with optgroups (メトロ / 都営 / JR)
 for (const prefix of ["from","to"]) {
   const sel = document.getElementById(prefix + "-line");
   const metroGrp = document.createElement("optgroup");
   metroGrp.label = "東京メトロ";
   const toeiGrp = document.createElement("optgroup");
   toeiGrp.label = "都営地下鉄";
+  const jrGrp = document.createElement("optgroup");
+  jrGrp.label = "JR";
   for (const code of LINE_ORDER) {
     const o = document.createElement("option");
     o.value = code;
     o.textContent = LINES[code].name;
-    if (isMetro(code)) metroGrp.appendChild(o);
-    else toeiGrp.appendChild(o);
+    const op = operatorOf(code);
+    if (op === "metro") metroGrp.appendChild(o);
+    else if (op === "toei") toeiGrp.appendChild(o);
+    else jrGrp.appendChild(o);
   }
   sel.appendChild(metroGrp);
   sel.appendChild(toeiGrp);
+  sel.appendChild(jrGrp);
+}
+
+// All unique station names (for cross-line search when no line is selected)
+const allStationNames = [];
+{
+  const seen = new Set();
+  for (const [, name] of S) {
+    if (!seen.has(name)) { seen.add(name); allStationNames.push(name); }
+  }
+}
+
+// Map a station name to a label showing its lines
+function stationLabel(name) {
+  const ids = nameToIds[name] || [];
+  const lineNames = [...new Set(ids.map(id => LINES[S[id][2]].name))];
+  return lineNames.length ? name + "（" + lineNames.join("・") + "）" : name;
+}
+
+function fillDatalist(prefix, names) {
+  const dl = document.getElementById(prefix + "-stations");
+  dl.innerHTML = "";
+  for (const name of names) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.label = stationLabel(name);
+    dl.appendChild(o);
+  }
 }
 
 function updateStations(prefix) {
   const lineCode = document.getElementById(prefix + "-line").value;
-  const sel = document.getElementById(prefix);
-  sel.innerHTML = "";
   if (!lineCode) {
-    sel.disabled = true;
-    sel.innerHTML = '<option value="">先に路線を選択</option>';
-    return;
+    fillDatalist(prefix, allStationNames);
+  } else {
+    fillDatalist(prefix, lineStations[lineCode]);
+    // Clear the input if its current value isn't on the selected line
+    const inp = document.getElementById(prefix);
+    if (inp.value && !lineStations[lineCode].includes(inp.value)) inp.value = "";
   }
-  sel.disabled = false;
-  sel.innerHTML = '<option value="">駅を選択</option>';
-  for (const name of lineStations[lineCode]) {
-    const o = document.createElement("option");
-    o.value = name;
-    o.textContent = name;
-    sel.appendChild(o);
-  }
+}
+
+function clearStations(prefix) {
+  document.getElementById(prefix).value = "";
+  updateStations(prefix);
 }
 
 function swapStations() {
@@ -621,25 +752,39 @@ function swapStations() {
   const tl = document.getElementById("to-line");
   const f = document.getElementById("from");
   const t = document.getElementById("to");
-  const tmpL = fl.value, tmpS = f.value;
+  const tmpL = fl.value;
   fl.value = tl.value; tl.value = tmpL;
+  const tmpS = f.value; f.value = t.value; t.value = tmpS;
   updateStations("from"); updateStations("to");
-  f.value = t.value; t.value = tmpS;
 }
 
+// Initialize datalists with all stations
+fillDatalist("from", allStationNames);
+fillDatalist("to", allStationNames);
+
 function calculate() {
-  const fromName = document.getElementById("from").value;
-  const toName = document.getElementById("to").value;
+  const fromName = document.getElementById("from").value.trim();
+  const toName = document.getElementById("to").value.trim();
   const resultEl = document.getElementById("result");
 
   if (!fromName || !toName) {
     resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">路線と駅を選択してください</div>';
+    resultEl.innerHTML = '<div class="error">出発駅と到着駅を入力してください</div>';
     return;
   }
   if (fromName === toName) {
     resultEl.className = "card result show";
     resultEl.innerHTML = '<div class="error">出発駅と到着駅が同じです</div>';
+    return;
+  }
+  if (!nameToIds[fromName]) {
+    resultEl.className = "card result show";
+    resultEl.innerHTML = '<div class="error">「' + escHtml(fromName) + '」という駅が見つかりません</div>';
+    return;
+  }
+  if (!nameToIds[toName]) {
+    resultEl.className = "card result show";
+    resultEl.innerHTML = '<div class="error">「' + escHtml(toName) + '」という駅が見つかりません</div>';
     return;
   }
 
@@ -649,12 +794,12 @@ function calculate() {
     resultEl.innerHTML = '<div class="error">経路が見つかりませんでした</div>';
     return;
   }
-  currentSort = 'distance';
+  currentSort = 'recommend';
   renderRoutes();
 }
 
 let lastRoutes = [];
-let currentSort = 'distance';
+let currentSort = 'recommend';
 
 function sortRoutes(key) {
   currentSort = key;
@@ -665,16 +810,17 @@ function renderRoutes() {
   const resultEl = document.getElementById("result");
   const sorted = [...lastRoutes];
   const cmp = {
+    recommend:(a,b) => a.score - b.score,
     price:    (a,b) => a.price - b.price || a.distance - b.distance,
     distance: (a,b) => a.distance - b.distance || a.transfers - b.transfers,
     transfers:(a,b) => a.transfers - b.transfers || a.distance - b.distance,
     stops:    (a,b) => a.stops - b.stops || a.distance - b.distance,
   };
-  sorted.sort(cmp[currentSort] || cmp.distance);
+  sorted.sort(cmp[currentSort] || cmp.recommend);
 
   let html = '<div class="sort-bar">';
   html += '<span class="sort-label">並べ替え:</span>';
-  const btns = [['price','運賃'],['distance','距離'],['transfers','乗換'],['stops','駅数']];
+  const btns = [['recommend','おすすめ'],['price','運賃'],['distance','距離'],['transfers','乗換'],['stops','駅数']];
   for (const [k,label] of btns) {
     html += '<button class="sort-btn' + (currentSort===k?' active':'') + '" onclick="sortRoutes(\'' + k + '\')">' + label + '</button>';
   }
@@ -694,7 +840,7 @@ function renderRoutes() {
       html += '<span class="route-fare">' + fi.totalTicket + '円</span>';
       html += '<span class="route-ic">IC ' + fi.totalIC + '円</span>';
     } else {
-      html += '<span class="route-fare" style="color:#888">メトロ区間なし</span>';
+      html += '<span class="route-fare" style="color:#888">運賃計算対象なし</span>';
     }
 
     html += '<span class="route-km">' + r.distance.toFixed(1) + 'km</span>';
@@ -702,11 +848,13 @@ function renderRoutes() {
     html += '<span class="route-stops">' + r.stops + '駅</span>';
     html += '</div>';
 
-    if (!fi.allMetro && fi.metroFares.length > 0) {
-      html += '<div class="fare-breakdown">メトロ: ';
-      html += fi.metroFares.map(f =>
-        f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>'
-      ).join(' + ');
+    // Fare breakdown when multiple paid segments or mixed with free (都営) sections
+    if (fi.metroFares.length > 1 || (fi.metroFares.length === 1 && !fi.allMetro)) {
+      html += '<div class="fare-breakdown">';
+      html += fi.metroFares.map(f => {
+        const tag = f.op === "jr" ? "JR" : "メトロ";
+        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>';
+      }).join(' ＋ ');
       html += '</div>';
     }
 
@@ -718,6 +866,15 @@ function renderRoutes() {
       html += '<span class="route-line-chip" style="background:' + li.color + '">' + li.name + '</span>';
     }
     html += '</div>';
+
+    // Warnings
+    if (fi.crossCompany) {
+      html += '<div class="route-warn">⚠ 他社線乗り換えあり（連絡運輸・乗継割引が別途設定されている場合があります）</div>';
+    }
+    if (fi.hasJR) {
+      html += '<div class="route-warn">⚠ JR線は大都市近郊区間の特例（大回り乗車）の対象となる場合があります</div>';
+    }
+
     html += '<details><summary>詳細</summary>';
     html += buildRouteHtml(r.path);
     html += '</details></div>';
