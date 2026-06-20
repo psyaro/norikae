@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>東京メトロ・都営地下鉄 最短経路探索</title>
+<title>東京障がい者割引乗り換え案内</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; }
@@ -79,8 +79,8 @@ optgroup { font-weight: 700; }
 </head>
 <body>
 <div class="container">
-  <h1>東京メトロ・都営地下鉄・JR 最短経路探索</h1>
-  <p class="subtitle">営業キロに基づく経路探索（メトロ・JR区間の運賃を計算／都営区間は運賃計算なし）</p>
+  <h1>東京障がい者割引乗り換え探索</h1>
+  <p class="subtitle">営業キロに基づく経路探索。メトロ・JR・京成は通常料金、都営は無料、TXは半額。</p>
   <div class="card">
     <div class="input-group">
       <label>出発路線（任意）</label>
@@ -131,6 +131,8 @@ const LINES = {
   JB: { name: "中央・総武線", color: "#FFD400" },
   JJ: { name: "常磐線", color: "#00B261" },
   TX: { name: "つくばエクスプレス", color: "#2E67B1" },
+  KS: { name: "京成本線", color: "#1E3C78" },
+  KO: { name: "京成押上線", color: "#1E3C78" },
 };
 
 const METRO_LINES = new Set(["G","M","Mb","H","T","C","Y","Z","N","F"]);
@@ -138,11 +140,13 @@ function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
 const TOEI_LINES = new Set(["A","I","S","E"]);
 const JR_LINES = new Set(["JY","JC","JB","JJ"]);
 const TX_LINES = new Set(["TX"]);
+const KEISEI_LINES = new Set(["KS","KO"]);
 function operatorOf(lineCode) {
   if (METRO_LINES.has(lineCode)) return "metro";
   if (TOEI_LINES.has(lineCode)) return "toei";
   if (JR_LINES.has(lineCode)) return "jr";
   if (TX_LINES.has(lineCode)) return "tx";
+  if (KEISEI_LINES.has(lineCode)) return "keisei";
   return "other";
 }
 
@@ -273,6 +277,24 @@ const S = [
 [409,"流山おおたかの森","TX"],[410,"柏の葉キャンパス","TX"],[411,"柏たなか","TX"],
 [412,"守谷","TX"],[413,"みらい平","TX"],[414,"みどりの","TX"],
 [415,"万博記念公園","TX"],[416,"研究学園","TX"],[417,"つくば","TX"],
+// 京成押上線 418-423
+[418,"押上","KO"],[419,"京成曳舟","KO"],[420,"八広","KO"],
+[421,"四ツ木","KO"],[422,"京成立石","KO"],[423,"青砥","KO"],
+// 京成本線 424-464
+[424,"京成上野","KS"],[425,"日暮里","KS"],[426,"新三河島","KS"],
+[427,"千住大橋","KS"],[428,"京成関屋","KS"],[429,"堀切菖蒲園","KS"],
+[430,"お花茶屋","KS"],[431,"青砥","KS"],[432,"京成高砂","KS"],
+[433,"京成小岩","KS"],[434,"江戸川","KS"],[435,"国府台","KS"],
+[436,"市川真間","KS"],[437,"菅野","KS"],[438,"京成八幡","KS"],
+[439,"鬼越","KS"],[440,"京成中山","KS"],[441,"東中山","KS"],
+[442,"京成西船","KS"],[443,"海神","KS"],[444,"京成船橋","KS"],
+[445,"大神宮下","KS"],[446,"船橋競馬場","KS"],[447,"谷津","KS"],
+[448,"京成津田沼","KS"],[449,"京成大久保","KS"],[450,"実籾","KS"],
+[451,"八千代台","KS"],[452,"京成大和田","KS"],[453,"勝田台","KS"],
+[454,"志津","KS"],[455,"ユーカリが丘","KS"],[456,"京成臼井","KS"],
+[457,"京成佐倉","KS"],[458,"大佐倉","KS"],[459,"京成酒々井","KS"],
+[460,"宗吾参道","KS"],[461,"公津の杜","KS"],[462,"京成成田","KS"],
+[463,"空港第2ビル","KS"],[464,"成田空港","KS"],
 ];
 
 // === EDGES (adjacent stations with 営業キロ) ===
@@ -360,6 +382,17 @@ const EDGES = [
 [398,399,1.6],[399,400,1.5],[400,401,2.5],[401,402,1.9],[402,403,3.1],[403,404,1.4],
 [404,405,3.6],[405,406,3.7],[406,407,2.8],[407,408,2.2],[408,409,2.2],[409,410,3.5],
 [410,411,2.0],[411,412,5.7],[412,413,6.6],[413,414,4.3],[414,415,3.2],[415,416,3.8],[416,417,2.7],
+// 京成押上線
+[418,419,1.0],[419,420,0.9],[420,421,0.9],[421,422,0.8],[422,423,1.1],
+// 京成本線
+[424,425,2.1],[425,426,0.8],[426,427,1.6],[427,428,0.7],[428,429,0.4],
+[429,430,0.9],[430,431,0.8],[431,432,1.0],[432,433,2.3],[433,434,1.0],
+[434,435,1.3],[435,436,0.6],[436,437,0.5],[437,438,0.6],[438,439,0.9],
+[439,440,0.5],[440,441,0.5],[441,442,1.0],[442,443,1.0],[443,444,0.9],
+[444,445,0.7],[445,446,0.8],[446,447,1.6],[447,448,1.3],[448,449,2.0],
+[449,450,1.9],[450,451,2.4],[451,452,1.8],[452,453,1.2],[453,454,1.3],
+[454,455,1.0],[455,456,2.5],[456,457,3.4],[457,458,2.3],[458,459,2.2],
+[459,460,2.0],[460,461,2.2],[461,462,2.5],[462,463,7.1],[463,464,1.0],
 ];
 
 // === TRANSFER CONNECTIONS (0 km) ===
@@ -383,6 +416,11 @@ const CROSS_TRANSFERS = [
   // JR↔Metro different-name connections
   [357,100],[318,100], // 御茶ノ水(JR) ↔ 新御茶ノ水(千代田)
   [289,257],[289,4],[289,52], // 御徒町(JR山手) ↔ 上野御徒町(大江戸)/上野広小路(銀座)/仲御徒町(日比谷)
+  // 京成 cross-name
+  [424,3],[424,51],[424,290],[424,379], // 京成上野 ↔ 上野(G,H,JY,JJ)
+  [438,367],[438,247], // 京成八幡 ↔ 本八幡(JB,S)
+  [444,370],           // 京成船橋 ↔ 船橋(JB)
+  [448,372],           // 京成津田沼 ↔ 津田沼(JB)
 ];
 
 // === FARE ZONES (Metro, with barrier-free surcharge, 2023) ===
@@ -437,6 +475,22 @@ function getTXFare(km) {
   for (const z of TX_DISCOUNT_ZONES) { if (km <= z.max) return z; }
   return TX_DISCOUNT_ZONES[TX_DISCOUNT_ZONES.length - 1];
 }
+
+// 京成運賃（空港駅・千原線を除く普通旅客運賃）
+const KEISEI_FARE_ZONES = [
+  {max:3,ticket:140},{max:5,ticket:160},{max:10,ticket:190},
+  {max:15,ticket:270},{max:20,ticket:330},{max:25,ticket:380},
+  {max:30,ticket:440},{max:35,ticket:500},{max:40,ticket:550},
+  {max:45,ticket:610},{max:50,ticket:680},{max:55,ticket:740},
+  {max:60,ticket:790},{max:65,ticket:850},{max:70,ticket:910},
+];
+function getKeiseiFare(km) {
+  for (const z of KEISEI_FARE_ZONES) { if (km <= z.max) return { ticket: z.ticket, ic: z.ticket }; }
+  return { ticket: 910, ic: 910 };
+}
+
+// 非表示駅（データにあるがUIから選択不可）
+const HIDDEN_STATIONS = new Set([463, 464]); // 空港第2ビル, 成田空港
 
 // === BUILD GRAPH ===
 const N = S.length;
@@ -632,6 +686,10 @@ const CROSS_NAME_MAP = {
   "岩本町": ["秋葉原"], "秋葉原": ["岩本町"],
   "御茶ノ水": ["新御茶ノ水"],
   "御徒町": ["上野御徒町","上野広小路","仲御徒町"],
+  "京成上野": ["上野"], "上野": ["京成上野"],
+  "京成八幡": ["本八幡"], "本八幡": ["京成八幡"],
+  "京成船橋": ["船橋"], "船橋": ["京成船橋"],
+  "京成津田沼": ["津田沼"], "津田沼": ["京成津田沼"],
 };
 function addCrossTransferIds(name, idSet) {
   if (CROSS_NAME_MAP[name]) {
@@ -681,7 +739,7 @@ function calcRouteFare(path) {
   const ops = new Set();
   for (const sec of sections) {
     if (sec.end > sec.start) ops.add(sec.op); // only count operators that actually travel
-    if (sec.op !== "metro" && sec.op !== "jr" && sec.op !== "tx") continue;
+    if (sec.op !== "metro" && sec.op !== "jr" && sec.op !== "tx" && sec.op !== "keisei") continue;
     totalSections++;
     let dist = 0;
     for (let i = sec.start; i < sec.end; i++) {
@@ -690,7 +748,7 @@ function calcRouteFare(path) {
     }
     dist = Math.round(dist * 10) / 10;
     if (dist > 0) {
-      const fare = sec.op === "jr" ? getJRFare(dist) : sec.op === "tx" ? getTXFare(dist) : getFare(dist);
+      const fare = sec.op === "jr" ? getJRFare(dist) : sec.op === "tx" ? getTXFare(dist) : sec.op === "keisei" ? getKeiseiFare(dist) : getFare(dist);
       if (sec.op === "jr") hasJR = true;
       metroFares.push({ dist, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       totalTicket += fare.ticket;
@@ -705,13 +763,13 @@ function calcRouteFare(path) {
 }
 
 // === UI ===
-const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","TX"];
+const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","TX","KS","KO"];
 const lineStations = {};
 for (const code of LINE_ORDER) {
   const stns = [];
   const seen = new Set();
   for (const [id, name, line] of S) {
-    if (line === code && !seen.has(name)) { seen.add(name); stns.push(name); }
+    if (line === code && !seen.has(name) && !HIDDEN_STATIONS.has(id)) { seen.add(name); stns.push(name); }
   }
   lineStations[code] = stns;
 }
@@ -747,8 +805,8 @@ for (const prefix of ["from","to"]) {
 const allStationNames = [];
 {
   const seen = new Set();
-  for (const [, name] of S) {
-    if (!seen.has(name)) { seen.add(name); allStationNames.push(name); }
+  for (const [id, name] of S) {
+    if (!seen.has(name) && !HIDDEN_STATIONS.has(id)) { seen.add(name); allStationNames.push(name); }
   }
 }
 
