@@ -15,8 +15,9 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .input-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; font-weight: 600; }
 .input-group input, .input-group select {
   width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
-  font-size: 1rem; transition: border-color 0.2s; background: #fff;
+  font-size: 1rem; transition: border-color 0.2s; background: #fff; appearance: auto;
 }
+.input-group select:disabled { color: #aaa; background: #f8f8f8; }
 .input-group input:focus, .input-group select:focus { border-color: #0089c7; outline: none; }
 .swap-row { display: flex; justify-content: center; margin: -4px 0 8px; }
 .swap-btn { background: none; border: 1px solid #ddd; border-radius: 50%; width: 36px; height: 36px;
@@ -66,21 +67,28 @@ details summary:hover { text-decoration: underline; }
   <p class="subtitle">営業キロに基づく運賃計算 （2023年3月18日現在）</p>
   <div class="card">
     <div class="input-group">
+      <label>出発路線</label>
+      <select id="from-line" onchange="updateStations('from')"><option value="">路線を選択</option></select>
+    </div>
+    <div class="input-group">
       <label>出発駅</label>
-      <input type="text" id="from" list="sl" placeholder="駅名を入力..." autocomplete="off">
+      <select id="from" disabled><option value="">先に路線を選択</option></select>
     </div>
     <div class="swap-row">
       <button class="swap-btn" onclick="swapStations()" title="入れ替え">&#8693;</button>
     </div>
     <div class="input-group">
+      <label>到着路線</label>
+      <select id="to-line" onchange="updateStations('to')"><option value="">路線を選択</option></select>
+    </div>
+    <div class="input-group">
       <label>到着駅</label>
-      <input type="text" id="to" list="sl" placeholder="駅名を入力..." autocomplete="off">
+      <select id="to" disabled><option value="">先に路線を選択</option></select>
     </div>
     <button class="calc-btn" onclick="calculate()">運賃を計算</button>
   </div>
   <div class="card result" id="result"></div>
 </div>
-<datalist id="sl"></datalist>
 <script>
 // === STATION DATA ===
 // [name, lineId, lineName]
@@ -392,55 +400,73 @@ function addCrossTransferIds(name, idSet) {
 }
 
 // === UI ===
-// Build unique station list for datalist
-const uniqueNames = [];
-const seen = new Set();
-for (const [, name] of S) {
-  if (!seen.has(name)) {
-    seen.add(name);
-    uniqueNames.push(name);
+// Build line->stations mapping (ordered, deduplicated per line)
+const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F"];
+const lineStations = {};
+for (const code of LINE_ORDER) {
+  const stns = [];
+  const seen = new Set();
+  for (const [id, name, line] of S) {
+    if (line === code && !seen.has(name)) { seen.add(name); stns.push(name); }
+  }
+  lineStations[code] = stns;
+}
+
+// Populate line selectors
+for (const prefix of ["from","to"]) {
+  const sel = document.getElementById(prefix + "-line");
+  for (const code of LINE_ORDER) {
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = LINES[code].name;
+    o.style.color = LINES[code].color;
+    sel.appendChild(o);
   }
 }
 
-const dl = document.getElementById("sl");
-for (const name of uniqueNames) {
-  const ids = nameToIds[name];
-  const lineNames = ids.map(id => LINES[S[id][2]].name);
-  const o = document.createElement("option");
-  o.value = name;
-  o.label = name + "（" + [...new Set(lineNames)].join("・") + "）";
-  dl.appendChild(o);
+function updateStations(prefix) {
+  const lineCode = document.getElementById(prefix + "-line").value;
+  const sel = document.getElementById(prefix);
+  sel.innerHTML = "";
+  if (!lineCode) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">先に路線を選択</option>';
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">駅を選択</option>';
+  for (const name of lineStations[lineCode]) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = name;
+    sel.appendChild(o);
+  }
 }
 
 function swapStations() {
+  const fl = document.getElementById("from-line");
+  const tl = document.getElementById("to-line");
   const f = document.getElementById("from");
   const t = document.getElementById("to");
-  [f.value, t.value] = [t.value, f.value];
+  const tmpL = fl.value, tmpS = f.value;
+  fl.value = tl.value; tl.value = tmpL;
+  updateStations("from"); updateStations("to");
+  f.value = t.value; t.value = tmpS;
 }
 
 function calculate() {
-  const fromName = document.getElementById("from").value.trim();
-  const toName = document.getElementById("to").value.trim();
+  const fromName = document.getElementById("from").value;
+  const toName = document.getElementById("to").value;
   const resultEl = document.getElementById("result");
 
   if (!fromName || !toName) {
     resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">出発駅と到着駅を入力してください</div>';
+    resultEl.innerHTML = '<div class="error">路線と駅を選択してください</div>';
     return;
   }
   if (fromName === toName) {
     resultEl.className = "card result show";
     resultEl.innerHTML = '<div class="error">出発駅と到着駅が同じです</div>';
-    return;
-  }
-  if (!nameToIds[fromName]) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">「' + escHtml(fromName) + '」は見つかりません</div>';
-    return;
-  }
-  if (!nameToIds[toName]) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">「' + escHtml(toName) + '」は見つかりません</div>';
     return;
   }
 
@@ -554,9 +580,6 @@ function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
-// Enter key triggers calculation
-document.getElementById("from").addEventListener("keydown", e => { if (e.key === "Enter") calculate(); });
-document.getElementById("to").addEventListener("keydown", e => { if (e.key === "Enter") calculate(); });
 </script>
 </body>
 </html>
