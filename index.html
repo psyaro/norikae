@@ -455,6 +455,16 @@ function getJRFare(km) {
   return JR_FARE_ZONES[JR_FARE_ZONES.length - 1];
 }
 
+// JR特定区間運賃（別表第２号イの７、東京附近）
+const JR_SPECIAL = {};
+function addJRS(a, b, t) { const k=[a,b].sort().join('|'); JR_SPECIAL[k]={ticket:t,ic:t}; }
+addJRS("東京","西船橋",350);
+addJRS("新宿","高尾",720); addJRS("新宿","八王子",620);
+addJRS("大久保","高尾",720); addJRS("大久保","八王子",620);
+addJRS("東中野","高尾",720);
+addJRS("渋谷","吉祥寺",290);
+function getJRSpecial(na, nb) { return JR_SPECIAL[[na,nb].sort().join('|')] || null; }
+
 // TX 改定後運賃 → 障がい者割引（半額切り上げ）
 const TX_FARE_ZONES = [
   {max:3,ticket:180,ic:180},{max:5,ticket:230,ic:230},{max:7,ticket:280,ic:271},
@@ -752,8 +762,13 @@ function calcRouteFare(path) {
     }
     dist = Math.round(dist * 10) / 10;
     if (dist > 0) {
-      const fare = sec.op === "jr" ? getJRFare(dist) : sec.op === "tx" ? getTXFare(dist) : sec.op === "keisei" ? getKeiseiFare(dist) : getFare(dist);
-      if (sec.op === "jr") hasJR = true;
+      let fare;
+      if (sec.op === "jr") {
+        fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(dist);
+        hasJR = true;
+      } else if (sec.op === "tx") { fare = getTXFare(dist); }
+      else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
+      else { fare = getFare(dist); }
       metroFares.push({ dist, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       totalTicket += fare.ticket;
       totalIC += fare.ic;
