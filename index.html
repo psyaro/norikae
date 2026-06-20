@@ -553,18 +553,21 @@ function hPop(h) { const t=h[0];const l=h.pop();if(h.length>0){h[0]=l;let i=0;wh
 // === ROUTE FINDING (penalty-based iterative Dijkstra) ===
 function routeSig(path) {
   const segs = [];
-  let curLine = S[path[0]][2], startG = grp[path[0]], endG = startG;
+  let curFam = lineFamily(S[path[0]][2]), startG = grp[path[0]], endG = startG;
   for (let i = 1; i < path.length; i++) {
-    const l = S[path[i]][2], g = grp[path[i]];
-    if (l !== curLine) {
-      if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
-      curLine = l; startG = g;
+    const fam = lineFamily(S[path[i]][2]), g = grp[path[i]];
+    if (fam !== curFam) {
+      if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
+      curFam = fam; startG = g;
     }
     endG = g;
   }
-  if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+  if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
   return segs.join('>');
 }
+
+// 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
+function lineFamily(code) { return (code==="JC"||code==="JB") ? "JR_CHUO" : code; }
 
 const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
 function dijkstraP(srcSet, dstSet, penalty, transferCost) {
@@ -582,9 +585,11 @@ function dijkstraP(srcSet, dstSet, penalty, transferCost) {
       // w===0 edge = transfer connection (same/cross-name station)
       let tc = 0;
       if (w === 0) {
-        tc = transferCost;
-        // Crossing to a different operator incurs a separate fare → heavy search penalty
-        if (operatorOf(S[u][2]) !== operatorOf(S[v][2])) tc += COMPANY_COST;
+        // Same line family (e.g. JC↔JB) → no transfer cost at all
+        if (lineFamily(S[u][2]) !== lineFamily(S[v][2])) {
+          tc = transferCost;
+          if (operatorOf(S[u][2]) !== operatorOf(S[v][2])) tc += COMPANY_COST;
+        }
       }
       const nd = d + w + tc + (penalty.get(key)||0);
       if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
@@ -1003,11 +1008,11 @@ function renderRoutes() {
 
 function getSegments(path) {
   const segments = [];
-  let curLine = S[path[0]][2], curStations = [path[0]];
+  let curFam = lineFamily(S[path[0]][2]), curLine = S[path[0]][2], curStations = [path[0]];
   for (let i = 1; i < path.length; i++) {
-    const l = S[path[i]][2];
-    if (l !== curLine) { segments.push({line:curLine,stations:curStations}); curLine=l; curStations=[path[i]]; }
-    else curStations.push(path[i]);
+    const l = S[path[i]][2], fam = lineFamily(l);
+    if (fam !== curFam) { segments.push({line:curLine,stations:curStations}); curFam=fam; curLine=l; curStations=[path[i]]; }
+    else { curLine=l; curStations.push(path[i]); }
   }
   segments.push({line:curLine,stations:curStations});
   return segments;
