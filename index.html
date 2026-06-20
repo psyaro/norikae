@@ -420,24 +420,33 @@ function findKRoutes(fromName, toName) {
 
   const results = [];
   const seenSigs = new Set();
-  const penalty = new Map();
+  const tried = new Set();
 
-  for (let iter = 0; iter < 20 && results.length < 10; iter++) {
-    const route = dijkstraP(srcSet, dstSet, penalty);
-    if (!route) break;
-    const sig = routeSig(route.path);
-    if (!seenSigs.has(sig)) {
-      seenSigs.add(sig);
-      results.push(route);
-    }
+  // Find shortest path
+  const first = dijkstraP(srcSet, dstSet, new Map());
+  if (!first) return [];
+  addResult(first);
+
+  // For each found route, block each real edge one at a time and find alternatives
+  for (let ri = 0; ri < results.length && results.length < 10; ri++) {
+    const route = results[ri];
     for (let i = 0; i < route.path.length - 1; i++) {
+      if (results.length >= 10) break;
       const u = route.path[i], v = route.path[i+1];
-      if (grp[u] !== grp[v]) {
-        const key = Math.min(u,v)*1000+Math.max(u,v);
-        penalty.set(key, (penalty.get(key)||0) + 3);
-      }
+      if (grp[u] === grp[v]) continue;
+      const key = Math.min(u,v)*1000+Math.max(u,v);
+      if (tried.has(key)) continue;
+      tried.add(key);
+      const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]));
+      if (alt) addResult(alt);
     }
   }
+
+  function addResult(route) {
+    const sig = routeSig(route.path);
+    if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
+  }
+
   results.sort((a, b) => a.distance - b.distance || getSegments(a.path).length - getSegments(b.path).length);
   return results;
 }
