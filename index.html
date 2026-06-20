@@ -43,6 +43,20 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .route-segment-bar { width: 4px; margin-left: 14px; flex-shrink: 0; border-radius: 2px; }
 .route-segment-info { padding: 2px 0 2px 20px; font-size: 0.8rem; color: #888; }
 .line-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; color: #fff; font-size: 0.75rem; font-weight: 600; margin-left: 6px; }
+.route-card { border: 1px solid #e8e8e8; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.route-card.best { border-color: #0089c7; border-width: 2px; }
+.route-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.route-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #e0e0e0; font-size: 0.75rem; font-weight: 700; color: #555; }
+.route-card.best .route-num { background: #0089c7; color: #fff; }
+.route-fare { font-size: 1.2rem; font-weight: 700; color: #333; }
+.route-ic { font-size: 0.8rem; color: #888; }
+.route-km { font-size: 0.8rem; color: #888; margin-left: auto; }
+.route-tx { font-size: 0.75rem; color: #888; }
+.route-lines { display: flex; align-items: center; gap: 4px; margin: 8px 0 4px; flex-wrap: wrap; }
+.route-line-chip { display: inline-block; padding: 2px 8px; border-radius: 4px; color: #fff; font-size: 0.7rem; font-weight: 600; }
+.route-arrow { color: #aaa; font-size: 0.8rem; }
+details summary { font-size: 0.8rem; color: #0089c7; cursor: pointer; margin: 4px 0; }
+details summary:hover { text-decoration: underline; }
 .error { color: #d32f2f; text-align: center; padding: 12px; font-size: 0.9rem; }
 </style>
 </head>
@@ -263,100 +277,98 @@ for (const ids of Object.values(nameToIds)) {
 // Cross-name transfers
 for (const [u, v] of CROSS_TRANSFERS) addEdge(u, v, 0);
 
-// === DIJKSTRA ===
-function dijkstra(sources) {
-  const dist = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
-  // Min-heap: [distance, nodeId]
-  const heap = [];
-  function push(d, u) {
-    heap.push([d, u]);
-    let i = heap.length - 1;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (heap[p][0] <= heap[i][0]) break;
-      [heap[p], heap[i]] = [heap[i], heap[p]];
-      i = p;
-    }
-  }
-  function pop() {
-    const top = heap[0];
-    const last = heap.pop();
-    if (heap.length > 0) {
-      heap[0] = last;
-      let i = 0;
-      while (true) {
-        let s = i, l = 2*i+1, r = 2*i+2;
-        if (l < heap.length && heap[l][0] < heap[s][0]) s = l;
-        if (r < heap.length && heap[r][0] < heap[s][0]) s = r;
-        if (s === i) break;
-        [heap[i], heap[s]] = [heap[s], heap[i]];
-        i = s;
-      }
-    }
-    return top;
-  }
+// === STATION COMPLEX GROUPS (Union-Find) ===
+const uf = Array.from({length: N}, (_, i) => i);
+function ufFind(x) { while (uf[x] !== x) { uf[x] = uf[uf[x]]; x = uf[x]; } return x; }
+function ufUnion(a, b) { uf[ufFind(a)] = ufFind(b); }
+for (const ids of Object.values(nameToIds)) {
+  for (let i = 1; i < ids.length; i++) ufUnion(ids[0], ids[i]);
+}
+for (const [u, v] of CROSS_TRANSFERS) ufUnion(u, v);
+const grp = new Uint8Array(N);
+const grpMap = {};
+let gid = 0;
+for (let i = 0; i < N; i++) { const r = ufFind(i); if (!(r in grpMap)) grpMap[r] = gid++; grp[i] = grpMap[r]; }
 
-  for (const s of sources) {
-    dist[s] = 0;
-    push(0, s);
-  }
+// === MIN-HEAP ===
+function hPush(h, e) { h.push(e); let i=h.length-1; while(i>0){const p=(i-1)>>1;if(h[p][0]<=h[i][0])break;[h[p],h[i]]=[h[i],h[p]];i=p;} }
+function hPop(h) { const t=h[0];const l=h.pop();if(h.length>0){h[0]=l;let i=0;while(true){let s=i,a=2*i+1,b=2*i+2;if(a<h.length&&h[a][0]<h[s][0])s=a;if(b<h.length&&h[b][0]<h[s][0])s=b;if(s===i)break;[h[i],h[s]]=[h[s],h[i]];i=s;}}return t; }
 
-  while (heap.length > 0) {
-    const [d, u] = pop();
-    if (d > dist[u]) continue;
-    for (const { to: v, w } of adj[u]) {
-      const nd = d + w;
-      if (nd < dist[v]) {
-        dist[v] = nd;
-        prev[v] = u;
-        push(nd, v);
-      }
+// === ROUTE FINDING (penalty-based iterative Dijkstra) ===
+function routeSig(path) {
+  const segs = [];
+  let curLine = S[path[0]][2], startG = grp[path[0]], endG = startG;
+  for (let i = 1; i < path.length; i++) {
+    const l = S[path[i]][2], g = grp[path[i]];
+    if (l !== curLine) {
+      if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+      curLine = l; startG = g;
     }
+    endG = g;
   }
-  return { dist, prev };
+  if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+  return segs.join('>');
 }
 
-function findRoute(fromName, toName) {
+function dijkstraP(srcSet, dstSet, penalty) {
+  const dist = new Float64Array(N).fill(Infinity);
+  const real = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const heap = [];
+  for (const s of srcSet) { dist[s] = 0; real[s] = 0; hPush(heap, [0, s]); }
+  while (heap.length > 0) {
+    const [d, u] = hPop(heap);
+    if (d > dist[u]) continue;
+    for (const {to: v, w} of adj[u]) {
+      const key = Math.min(u,v)*1000+Math.max(u,v);
+      const nd = d + w + (penalty.get(key)||0);
+      if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
+    }
+  }
+  let bestD = Infinity, bestR = 0, bestN = -1;
+  for (const d of dstSet) if (dist[d] < bestD) { bestD = dist[d]; bestR = real[d]; bestN = d; }
+  if (bestN === -1) return null;
+  const same = [...dstSet].filter(d => dist[d] === bestD);
+  if (same.length > 1) for (const d of same) {
+    if (prev[d] >= 0 && S[prev[d]][2] === S[d][2]) { bestN = d; bestR = real[d]; break; }
+  }
+  const path = []; let c = bestN; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
+  while (path.length > 1 && grp[path[0]] === grp[path[1]]) path.shift();
+  while (path.length > 1 && grp[path[path.length-1]] === grp[path[path.length-2]]) path.pop();
+  return { distance: Math.round(bestR * 10) / 10, path };
+}
+
+function findKRoutes(fromName, toName) {
   const srcIds = nameToIds[fromName];
   const dstIds = nameToIds[toName];
-  if (!srcIds || !dstIds) return null;
-
-  // Also include cross-transfer stations
+  if (!srcIds || !dstIds) return [];
   const srcSet = new Set(srcIds);
   const dstSet = new Set(dstIds);
   addCrossTransferIds(fromName, srcSet);
   addCrossTransferIds(toName, dstSet);
 
-  const { dist, prev } = dijkstra([...srcSet]);
+  const results = [];
+  const seenSigs = new Set();
+  const penalty = new Map();
 
-  let bestDist = Infinity, bestDst = -1;
-  for (const d of dstSet) {
-    if (dist[d] < bestDist) {
-      bestDist = dist[d];
-      bestDst = d;
+  for (let iter = 0; iter < 20 && results.length < 10; iter++) {
+    const route = dijkstraP(srcSet, dstSet, penalty);
+    if (!route) break;
+    const sig = routeSig(route.path);
+    if (!seenSigs.has(sig)) {
+      seenSigs.add(sig);
+      results.push(route);
+    }
+    for (let i = 0; i < route.path.length - 1; i++) {
+      const u = route.path[i], v = route.path[i+1];
+      if (grp[u] !== grp[v]) {
+        const key = Math.min(u,v)*1000+Math.max(u,v);
+        penalty.set(key, (penalty.get(key)||0) + 3);
+      }
     }
   }
-  if (bestDst === -1 || bestDist === Infinity) return null;
-
-  // Among destinations with same best distance, prefer one whose predecessor
-  // is on the same line (avoids unnecessary trailing transfer in display)
-  const sameDist = [...dstSet].filter(d => dist[d] === bestDist);
-  if (sameDist.length > 1) {
-    for (const d of sameDist) {
-      if (prev[d] >= 0 && S[prev[d]][2] === S[d][2]) { bestDst = d; break; }
-    }
-  }
-
-  const path = [];
-  let cur = bestDst;
-  while (cur !== -1) {
-    path.push(cur);
-    cur = prev[cur];
-  }
-  path.reverse();
-
-  return { distance: Math.round(bestDist * 10) / 10, path };
+  results.sort((a, b) => a.distance - b.distance || getSegments(a.path).length - getSegments(b.path).length);
+  return results;
 }
 
 // Cross-name station groups derived from PDF斜線 data
@@ -432,47 +444,59 @@ function calculate() {
     return;
   }
 
-  const result = findRoute(fromName, toName);
-  if (!result) {
+  const routes = findKRoutes(fromName, toName);
+  if (!routes.length) {
     resultEl.className = "card result show";
     resultEl.innerHTML = '<div class="error">経路が見つかりませんでした</div>';
     return;
   }
 
-  const fare = getFare(result.distance);
-  let html = '<div class="fare-display">';
-  html += '<div class="fare-main">' + fare.ticket + '<span>円（きっぷ）</span></div>';
-  html += '<div class="fare-sub">IC: <b>' + fare.ic + '円</b></div>';
-  html += '<div class="distance">営業キロ: ' + result.distance.toFixed(1) + ' km</div>';
-  html += '</div>';
-
-  // Route display
-  html += '<div class="route"><div class="route-title">経路</div>';
-  html += buildRouteHtml(result.path);
-  html += '</div>';
+  let html = '';
+  for (let ri = 0; ri < routes.length; ri++) {
+    const r = routes[ri];
+    const fare = getFare(r.distance);
+    const segments = getSegments(r.path);
+    const transfers = segments.length - 1;
+    html += '<div class="route-card' + (ri === 0 ? ' best' : '') + '">';
+    html += '<div class="route-header">';
+    html += '<span class="route-num">' + (ri + 1) + '</span>';
+    html += '<span class="route-fare">' + fare.ticket + '円</span>';
+    html += '<span class="route-ic">IC ' + fare.ic + '円</span>';
+    html += '<span class="route-km">' + r.distance.toFixed(1) + 'km</span>';
+    html += '<span class="route-tx">乗換' + transfers + '回</span>';
+    html += '</div>';
+    html += '<div class="route-lines">';
+    for (let si = 0; si < segments.length; si++) {
+      const seg = segments[si];
+      const li = LINES[seg.line];
+      if (si > 0) html += '<span class="route-arrow">→</span>';
+      html += '<span class="route-line-chip" style="background:' + li.color + '">' + li.name + '</span>';
+    }
+    html += '</div>';
+    html += '<details' + (ri === 0 ? ' open' : '') + '><summary>詳細</summary>';
+    html += buildRouteHtml(r.path);
+    html += '</details></div>';
+  }
 
   resultEl.className = "card result show";
   resultEl.innerHTML = html;
 }
 
+function getSegments(path) {
+  const segments = [];
+  let curLine = S[path[0]][2], curStations = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const l = S[path[i]][2];
+    if (l !== curLine) { segments.push({line:curLine,stations:curStations}); curLine=l; curStations=[path[i]]; }
+    else curStations.push(path[i]);
+  }
+  segments.push({line:curLine,stations:curStations});
+  return segments;
+}
+
 function buildRouteHtml(path) {
   if (path.length === 0) return "";
-
-  const segments = [];
-  let curLine = S[path[0]][2];
-  let curStations = [path[0]];
-
-  for (let i = 1; i < path.length; i++) {
-    const line = S[path[i]][2];
-    if (line !== curLine) {
-      segments.push({ line: curLine, stations: curStations });
-      curLine = line;
-      curStations = [path[i]];
-    } else {
-      curStations.push(path[i]);
-    }
-  }
-  segments.push({ line: curLine, stations: curStations });
+  const segments = getSegments(path);
 
   let html = "";
   for (let si = 0; si < segments.length; si++) {
