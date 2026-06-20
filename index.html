@@ -80,7 +80,7 @@ optgroup { font-weight: 700; }
 <body>
 <div class="container">
   <h1>東京障がい者割引乗り換え探索</h1>
-  <p class="subtitle">営業キロに基づく経路探索。メトロ・JR・京成は通常料金、都営は無料、TXは半額。</p>
+  <p class="subtitle">営業キロに基づく経路探索。メトロ・JRは通常料金、都営は無料、TX・京成は半額。</p>
   <div class="card">
     <div class="input-group">
       <label>出発路線（任意）</label>
@@ -486,8 +486,10 @@ const KEISEI_FARE_ZONES = [
   {max:60,ticket:790},{max:65,ticket:850},{max:70,ticket:910},
 ];
 function getKeiseiFare(km) {
-  for (const z of KEISEI_FARE_ZONES) { if (km <= z.max) return { ticket: z.ticket, ic: z.ticket }; }
-  return { ticket: 910, ic: 910 };
+  for (const z of KEISEI_FARE_ZONES) {
+    if (km <= z.max) return { ticket: Math.ceil(z.ticket / 2 / 10) * 10, ic: Math.ceil(z.ticket / 2) };
+  }
+  return { ticket: Math.ceil(910 / 2 / 10) * 10, ic: Math.ceil(910 / 2) };
 }
 
 // 非表示駅（データにあるがUIから選択不可）
