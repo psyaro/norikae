@@ -495,11 +495,12 @@ const KEISEI_FARE_ZONES = [
   {max:45,ticket:610},{max:50,ticket:680},{max:55,ticket:740},
   {max:60,ticket:790},{max:65,ticket:850},{max:70,ticket:910},
 ];
+// 京成: 運賃+バリアフリー10円(割引前) → 半額切り上げ
 function getKeiseiFare(km) {
   for (const z of KEISEI_FARE_ZONES) {
-    if (km <= z.max) return { ticket: Math.ceil(z.ticket / 2 / 10) * 10, ic: Math.ceil(z.ticket / 2) };
+    if (km <= z.max) { const b=z.ticket+10; return { ticket: Math.ceil(b/2/10)*10, ic: Math.ceil(b/2) }; }
   }
-  return { ticket: Math.ceil(910 / 2 / 10) * 10, ic: Math.ceil(910 / 2) };
+  const b=910+10; return { ticket: Math.ceil(b/2/10)*10, ic: Math.ceil(b/2) };
 }
 
 // 非表示駅（データにあるがUIから選択不可）
