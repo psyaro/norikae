@@ -58,6 +58,13 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .route-arrow { color: #aaa; font-size: 0.8rem; }
 details summary { font-size: 0.8rem; color: #0089c7; cursor: pointer; margin: 4px 0; }
 details summary:hover { text-decoration: underline; }
+.sort-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.sort-label { font-size: 0.8rem; color: #666; font-weight: 600; }
+.sort-btn { padding: 4px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; }
+.sort-btn:hover { background: #f0f0f0; }
+.sort-btn.active { background: #0089c7; color: #fff; border-color: #0089c7; }
+.sort-count { font-size: 0.75rem; color: #999; margin-left: auto; }
+.route-stops { font-size: 0.75rem; color: #888; }
 .far-note { font-size: 0.7rem; color: #d32f2f; margin-top: 2px; }
 .error { color: #d32f2f; text-align: center; padding: 12px; font-size: 0.9rem; }
 .fare-breakdown { font-size: 0.8rem; color: #666; margin-top: 2px; }
@@ -418,20 +425,19 @@ function findKRoutes(fromName, toName) {
   addCrossTransferIds(fromName, srcSet);
   addCrossTransferIds(toName, dstSet);
 
+  const MAX = 30;
   const results = [];
   const seenSigs = new Set();
   const tried = new Set();
 
-  // Find shortest path
   const first = dijkstraP(srcSet, dstSet, new Map());
   if (!first) return [];
   addResult(first);
 
-  // For each found route, block each real edge one at a time and find alternatives
-  for (let ri = 0; ri < results.length && results.length < 10; ri++) {
+  for (let ri = 0; ri < results.length && results.length < MAX; ri++) {
     const route = results[ri];
     for (let i = 0; i < route.path.length - 1; i++) {
-      if (results.length >= 10) break;
+      if (results.length >= MAX) break;
       const u = route.path[i], v = route.path[i+1];
       if (grp[u] === grp[v]) continue;
       const key = Math.min(u,v)*1000+Math.max(u,v);
@@ -447,7 +453,20 @@ function findKRoutes(fromName, toName) {
     if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
   }
 
-  results.sort((a, b) => a.distance - b.distance || getSegments(a.path).length - getSegments(b.path).length);
+  // Enrich with metadata
+  for (const r of results) {
+    const segs = getSegments(r.path);
+    r.transfers = segs.length - 1;
+    // 通過駅数: unique physical stations (by grp), including transfer stations
+    const visited = new Set();
+    for (const id of r.path) visited.add(grp[id]);
+    r.stops = visited.size;
+    const fi = calcRouteFare(r.path);
+    r.fareInfo = fi;
+    r.price = fi.totalTicket; // Metro fare only (Toei = free)
+  }
+
+  results.sort((a, b) => a.distance - b.distance || a.transfers - b.transfers);
   return results;
 }
 
@@ -604,39 +623,68 @@ function calculate() {
     return;
   }
 
-  const routes = findKRoutes(fromName, toName);
-  if (!routes.length) {
+  lastRoutes = findKRoutes(fromName, toName);
+  if (!lastRoutes.length) {
     resultEl.className = "card result show";
     resultEl.innerHTML = '<div class="error">経路が見つかりませんでした</div>';
     return;
   }
+  currentSort = 'distance';
+  renderRoutes();
+}
 
-  let html = '';
-  for (let ri = 0; ri < routes.length; ri++) {
-    const r = routes[ri];
+let lastRoutes = [];
+let currentSort = 'distance';
+
+function sortRoutes(key) {
+  currentSort = key;
+  renderRoutes();
+}
+
+function renderRoutes() {
+  const resultEl = document.getElementById("result");
+  const sorted = [...lastRoutes];
+  const cmp = {
+    price:    (a,b) => a.price - b.price || a.distance - b.distance,
+    distance: (a,b) => a.distance - b.distance || a.transfers - b.transfers,
+    transfers:(a,b) => a.transfers - b.transfers || a.distance - b.distance,
+    stops:    (a,b) => a.stops - b.stops || a.distance - b.distance,
+  };
+  sorted.sort(cmp[currentSort] || cmp.distance);
+
+  let html = '<div class="sort-bar">';
+  html += '<span class="sort-label">並べ替え:</span>';
+  const btns = [['price','運賃'],['distance','距離'],['transfers','乗換'],['stops','駅数']];
+  for (const [k,label] of btns) {
+    html += '<button class="sort-btn' + (currentSort===k?' active':'') + '" onclick="sortRoutes(\'' + k + '\')">' + label + '</button>';
+  }
+  html += '<span class="sort-count">' + sorted.length + '件</span>';
+  html += '</div>';
+
+  for (let ri = 0; ri < sorted.length; ri++) {
+    const r = sorted[ri];
     const segments = getSegments(r.path);
-    const transfers = segments.length - 1;
-    const fareInfo = calcRouteFare(r.path);
+    const fi = r.fareInfo;
 
     html += '<div class="route-card' + (ri === 0 ? ' best' : '') + '">';
     html += '<div class="route-header">';
     html += '<span class="route-num">' + (ri + 1) + '</span>';
 
-    if (fareInfo.metroFares.length > 0) {
-      html += '<span class="route-fare">' + fareInfo.totalTicket + '円</span>';
-      html += '<span class="route-ic">IC ' + fareInfo.totalIC + '円</span>';
+    if (fi.metroFares.length > 0) {
+      html += '<span class="route-fare">' + fi.totalTicket + '円</span>';
+      html += '<span class="route-ic">IC ' + fi.totalIC + '円</span>';
     } else {
       html += '<span class="route-fare" style="color:#888">メトロ区間なし</span>';
     }
 
     html += '<span class="route-km">' + r.distance.toFixed(1) + 'km</span>';
-    html += '<span class="route-tx">乗換' + transfers + '回</span>';
+    html += '<span class="route-tx">乗換' + r.transfers + '回</span>';
+    html += '<span class="route-stops">' + r.stops + '駅</span>';
     html += '</div>';
 
-    // Fare breakdown for mixed routes
-    if (!fareInfo.allMetro && fareInfo.metroFares.length > 0) {
-      html += '<div class="fare-breakdown">メトロ運賃: ';
-      html += fareInfo.metroFares.map(f =>
+    if (!fi.allMetro && fi.metroFares.length > 0) {
+      html += '<div class="fare-breakdown">メトロ: ';
+      html += fi.metroFares.map(f =>
         f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>'
       ).join(' + ');
       html += '</div>';
@@ -650,7 +698,7 @@ function calculate() {
       html += '<span class="route-line-chip" style="background:' + li.color + '">' + li.name + '</span>';
     }
     html += '</div>';
-    html += '<details' + (ri === 0 ? ' open' : '') + '><summary>詳細</summary>';
+    html += '<details><summary>詳細</summary>';
     html += buildRouteHtml(r.path);
     html += '</details></div>';
   }
