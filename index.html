@@ -815,24 +815,21 @@ function hPop(h) { const t=h[0];const l=h.pop();if(h.length>0){h[0]=l;let i=0;wh
 // === ROUTE FINDING (penalty-based iterative Dijkstra) ===
 function routeSig(path) {
   const segs = [];
-  let curLine = S[path[0]][2], startG = grp[path[0]], endG = startG;
+  let curFam = lineFamily(S[path[0]][2]), startG = grp[path[0]], endG = startG;
   for (let i = 1; i < path.length; i++) {
-    const line = S[path[i]][2], g = grp[path[i]];
-    if (line !== curLine) {
-      if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
-      curLine = line; startG = g;
+    const fam = lineFamily(S[path[i]][2]), g = grp[path[i]];
+    if (fam !== curFam) {
+      if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
+      curFam = fam; startG = g;
     }
     endG = g;
   }
-  if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+  if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
   return segs.join('>');
 }
 
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
-const FAMILY_DISPLAY = { JR: { name: "JR東日本", color: "#378B29" } };
-function familyDisplay(code) { const fam = lineFamily(code); return FAMILY_DISPLAY[fam] || LINES[code]; }
-
 const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
 function dijkstraP(srcSet, dstSet, penalty, transferCost) {
   transferCost = transferCost || 0;
@@ -1248,7 +1245,7 @@ function renderRoutes() {
     html += '<div class="route-lines">';
     for (let si = 0; si < segments.length; si++) {
       const seg = segments[si];
-      const fd = familyDisplay(seg.line);
+      const fd = LINES[seg.line];
       if (si > 0) html += '<span class="route-arrow">→</span>';
       html += '<span class="route-line-chip" style="background:' + fd.color + '">' + fd.name + '</span>';
     }
@@ -1289,7 +1286,7 @@ function buildRouteHtml(path) {
   let html = "";
   for (let si = 0; si < segments.length; si++) {
     const seg = segments[si];
-    const fd = familyDisplay(seg.line);
+    const fd = LINES[seg.line];
     const c = fd.color;
     // dedupe same physical station (same grp) within segment
     const uniq = [seg.stations[0]];
@@ -1336,7 +1333,7 @@ function buildRouteHtml(path) {
     }
 
     if (si < segments.length - 1) {
-      const nc = familyDisplay(segments[si+1].line).color;
+      const nc = LINES[segments[si+1].line].color;
       html += '<div class="route-segment">';
       html += '<div class="route-segment-bar" style="background:linear-gradient(' + c + ',' + nc + ')"></div>';
       html += '<div class="route-segment-info" style="color:#e67e00">⇅ 乗換</div>';
