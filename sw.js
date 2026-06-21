@@ -1,4 +1,4 @@
-const CACHE_NAME = 'norikae-v10';
+const CACHE_NAME = 'norikae-v11';
 const ASSETS = [
   './',
   './index.html',

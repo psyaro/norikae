@@ -946,10 +946,17 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  // Dedupe: same distance + fare + transfers = same route → keep fewer stops
+  // Dedupe: same distance + fare + operator pattern = same route → keep fewer stops
   const byKey = new Map();
   for (const r of results) {
-    const key = r.distance.toFixed(1) + '|' + r.price + '|' + r.transfers;
+    const ops = [];
+    let cur = operatorOf(S[r.path[0]][2]);
+    ops.push(cur);
+    for (let i = 1; i < r.path.length; i++) {
+      const op = operatorOf(S[r.path[i]][2]);
+      if (op !== cur) { ops.push(op); cur = op; }
+    }
+    const key = r.distance.toFixed(1) + '|' + r.price + '|' + ops.join('>');
     const prev = byKey.get(key);
     if (!prev || r.stops < prev.stops) byKey.set(key, r);
   }
@@ -1251,11 +1258,15 @@ function renderRoutes() {
     }
 
     html += '<div class="route-lines">';
+    let chipIdx = 0;
     for (let si = 0; si < segments.length; si++) {
       const seg = segments[si];
-      const fd = LINES[seg.line];
-      if (si > 0) html += '<span class="route-arrow">→</span>';
-      html += '<span class="route-line-chip" style="background:' + fd.color + '">' + fd.name + '</span>';
+      for (const lc of seg.lines) {
+        const li = LINES[lc];
+        if (chipIdx > 0) html += '<span class="route-arrow">→</span>';
+        html += '<span class="route-line-chip" style="background:' + li.color + '">' + li.name + '</span>';
+        chipIdx++;
+      }
     }
     html += '</div>';
 
@@ -1278,72 +1289,130 @@ function renderRoutes() {
 function getSegments(path) {
   const segments = [];
   let curFam = lineFamily(S[path[0]][2]), curLine = S[path[0]][2], curStations = [path[0]];
+  const curLines = [curLine];
   for (let i = 1; i < path.length; i++) {
     const l = S[path[i]][2], fam = lineFamily(l);
-    if (fam !== curFam) { segments.push({line:curLine,stations:curStations}); curFam=fam; curLine=l; curStations=[path[i]]; }
-    else { curLine=l; curStations.push(path[i]); }
+    if (fam !== curFam) {
+      segments.push({line:curLine, lines:[...new Set(curLines)], stations:curStations});
+      curFam=fam; curLine=l; curStations=[path[i]]; curLines.length=0; curLines.push(l);
+    } else {
+      if (l !== curLine) { curLines.push(l); curLine=l; }
+      curStations.push(path[i]);
+    }
   }
-  segments.push({line:curLine,stations:curStations});
+  segments.push({line:curLine, lines:[...new Set(curLines)], stations:curStations});
   return segments;
+}
+
+function getSubSegments(path) {
+  const subs = [];
+  let curLine = S[path[0]][2], curStations = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const l = S[path[i]][2];
+    if (l !== curLine) {
+      subs.push({ line: curLine, stations: curStations });
+      curLine = l; curStations = [path[i]];
+    } else {
+      curStations.push(path[i]);
+    }
+  }
+  subs.push({ line: curLine, stations: curStations });
+  // merge consecutive subs at same grp boundary (same physical station, line switch)
+  const merged = [subs[0]];
+  for (let i = 1; i < subs.length; i++) {
+    const prev = merged[merged.length - 1];
+    const cur = subs[i];
+    const prevEnd = prev.stations[prev.stations.length - 1];
+    const curStart = cur.stations[0];
+    if (prev.stations.length === 1 && grp[prevEnd] === grp[curStart]) {
+      merged[merged.length - 1] = cur;
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged;
 }
 
 function buildRouteHtml(path) {
   if (path.length === 0) return "";
-  const segments = getSegments(path);
+  const famSegments = getSegments(path);
+  const subs = getSubSegments(path);
 
   let html = "";
-  for (let si = 0; si < segments.length; si++) {
-    const seg = segments[si];
-    const fd = LINES[seg.line];
-    const c = fd.color;
-    // dedupe same physical station (same grp) within segment
-    const uniq = [seg.stations[0]];
-    for (let k = 1; k < seg.stations.length; k++) {
-      if (grp[seg.stations[k]] !== grp[seg.stations[k-1]]) uniq.push(seg.stations[k]);
-    }
-    const first = uniq[0];
-    const last = uniq[uniq.length - 1];
-    const stCount = uniq.length;
+  let subIdx = 0;
+  for (let si = 0; si < famSegments.length; si++) {
+    const famSeg = famSegments[si];
+    const famFirst = famSeg.stations[0];
+    const famLast = famSeg.stations[famSeg.stations.length - 1];
 
     // skip start station if same physical station as previous segment's end
-    const skipStart = si > 0 && grp[first] === grp[segments[si-1].stations[segments[si-1].stations.length-1]];
+    const skipStart = si > 0 && grp[famFirst] === grp[famSegments[si-1].stations[famSegments[si-1].stations.length-1]];
 
-    if (!skipStart) {
-      html += '<div class="route-station">';
-      html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-      html += '<div class="route-name">' + escHtml(S[first][1]);
-      html += '<span class="line-badge" style="background:' + c + '">' + fd.name + '</span>';
-      if (si > 0) {
-        html += '<span class="route-transfer">乗換</span>';
-        const prevSeg = segments[si-1];
-        const prevLast = prevSeg.stations[prevSeg.stations.length-1];
-        const farNote = getFarNote(prevLast, first);
-        if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
-      }
-      html += '</div></div>';
+    // collect subs belonging to this family segment
+    const mySubs = [];
+    while (subIdx < subs.length) {
+      const sub = subs[subIdx];
+      if (lineFamily(sub.line) !== lineFamily(famSeg.line) && mySubs.length > 0) break;
+      mySubs.push(sub);
+      subIdx++;
+      if (sub.stations.includes(famLast) || grp[sub.stations[sub.stations.length-1]] === grp[famLast]) break;
     }
 
-    if (stCount > 1) {
-      const midStations = uniq.slice(1, -1).map(id => escHtml(S[id][1]));
-      html += '<div class="route-segment">';
-      html += '<div class="route-segment-bar" style="background:' + c + '"></div>';
-      html += '<div class="route-segment-info">';
-      if (midStations.length > 0) {
-        html += '<span class="route-stops-list">' + midStations.join(' → ') + '</span>';
+    // render each sub-segment
+    for (let mi = 0; mi < mySubs.length; mi++) {
+      const sub = mySubs[mi];
+      const li = LINES[sub.line];
+      const c = li.color;
+      const uniq = [sub.stations[0]];
+      for (let k = 1; k < sub.stations.length; k++) {
+        if (grp[sub.stations[k]] !== grp[sub.stations[k-1]]) uniq.push(sub.stations[k]);
       }
-      html += '</div></div>';
+      const first = uniq[0];
+      const last = uniq[uniq.length - 1];
 
-      html += '<div class="route-station">';
-      html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-      html += '<div class="route-name">' + escHtml(S[last][1]);
-      html += '<span class="line-badge" style="background:' + c + '">' + fd.name + '</span>';
-      html += '</div></div>';
+      const skipThis = (mi === 0 && skipStart) || (mi > 0 && grp[first] === grp[mySubs[mi-1].stations[mySubs[mi-1].stations.length-1]]);
+
+      if (!skipThis) {
+        html += '<div class="route-station">';
+        html += '<div class="route-dot" style="border-color:' + c + '"></div>';
+        html += '<div class="route-name">' + escHtml(S[first][1]);
+        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+        if (si > 0 && mi === 0 && !skipStart) {
+          html += '<span class="route-transfer">乗換</span>';
+          const prevSeg = famSegments[si-1];
+          const prevLast = prevSeg.stations[prevSeg.stations.length-1];
+          const farNote = getFarNote(prevLast, first);
+          if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
+        }
+        html += '</div></div>';
+      }
+
+      if (uniq.length > 1) {
+        const midStations = uniq.slice(1, -1).map(id => escHtml(S[id][1]));
+        html += '<div class="route-segment">';
+        html += '<div class="route-segment-bar" style="background:' + c + '"></div>';
+        html += '<div class="route-segment-info">';
+        if (midStations.length > 0) {
+          html += '<span class="route-stops-list">' + midStations.join(' → ') + '</span>';
+        }
+        html += '</div></div>';
+
+        html += '<div class="route-station">';
+        html += '<div class="route-dot" style="border-color:' + c + '"></div>';
+        html += '<div class="route-name">' + escHtml(S[last][1]);
+        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+        html += '</div></div>';
+      }
     }
 
-    if (si < segments.length - 1) {
-      const nc = LINES[segments[si+1].line].color;
+    if (si < famSegments.length - 1) {
+      const lastSub = mySubs[mySubs.length - 1];
+      const cc = LINES[lastSub.line].color;
+      const nextFam = famSegments[si+1];
+      const nextFirstLine = S[nextFam.stations[0]][2];
+      const nc = LINES[nextFirstLine].color;
       html += '<div class="route-segment">';
-      html += '<div class="route-segment-bar" style="background:linear-gradient(' + c + ',' + nc + ')"></div>';
+      html += '<div class="route-segment-bar" style="background:linear-gradient(' + cc + ',' + nc + ')"></div>';
       html += '<div class="route-segment-info" style="color:#e67e00">⇅ 乗換</div>';
       html += '</div>';
     }
