@@ -1,0 +1,14 @@
+{
+  "name": "東京障がい者割引乗り換え探索",
+  "short_name": "乗換探索",
+  "description": "東京の地下鉄・JR・私鉄の障がい者割引運賃の最短経路探索",
+  "start_url": "./index.html#search",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#0089c7",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -4,9 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>東京障がい者割引乗り換え案内</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0089c7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="乗換探索">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; }
+body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; background: #f0f2f5; color: #333; min-height: 100vh; padding-bottom: 64px; }
 .container { max-width: 640px; margin: 0 auto; padding: 20px; }
 h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 24px; }
@@ -29,8 +35,6 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .calc-btn { width: 100%; padding: 12px; background: #0089c7; color: #fff; border: none;
   border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
 .calc-btn:hover { background: #006fa3; }
-.result { display: none; }
-.result.show { display: block; }
 .fare-display { text-align: center; padding: 16px 0; }
 .fare-main { font-size: 2.2rem; font-weight: 700; color: #0089c7; }
 .fare-main span { font-size: 1rem; font-weight: 400; }
@@ -75,9 +79,65 @@ details summary:hover { text-decoration: underline; }
 .fare-breakdown b { color: #333; }
 .line-sep { border-top: 1px dashed #ddd; margin: 4px 0; }
 optgroup { font-weight: 700; }
+
+/* SPA pages */
+.page { display: none; }
+.page.active { display: block; animation: pageIn 0.2s ease; }
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Bottom nav */
+.bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e0e0e0;
+  display: flex; justify-content: center; z-index: 100; }
+.bottom-nav-inner { display: flex; max-width: 640px; width: 100%; }
+.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 0 6px;
+  cursor: pointer; color: #999; transition: color 0.2s; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.nav-item:hover { color: #555; }
+.nav-item.active { color: #0089c7; }
+.nav-icon { font-size: 1.3rem; line-height: 1; margin-bottom: 2px; }
+.nav-label { font-size: 0.65rem; font-weight: 600; }
+
+/* Results page */
+.back-btn { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; background: none; border: 1px solid #ddd;
+  border-radius: 8px; font-size: 0.85rem; color: #666; cursor: pointer; margin-bottom: 12px; transition: all 0.2s; }
+.back-btn:hover { background: #f0f0f0; color: #333; }
+.result-summary { text-align: center; font-size: 0.9rem; color: #666; margin-bottom: 16px; }
+.result-summary b { color: #333; }
+
+/* Lines page */
+.line-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.line-item { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #fff; border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); cursor: pointer; transition: all 0.15s; border: 2px solid transparent; }
+.line-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+.line-item.selected { border-color: #0089c7; }
+.line-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.line-item-name { font-size: 0.85rem; font-weight: 600; }
+.line-item-count { font-size: 0.7rem; color: #999; margin-left: auto; }
+.station-list { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden; }
+.station-list-header { padding: 12px 16px; font-size: 0.9rem; font-weight: 700; border-bottom: 1px solid #eee;
+  display: flex; align-items: center; gap: 8px; }
+.station-list-item { padding: 10px 16px; border-bottom: 1px solid #f5f5f5; font-size: 0.9rem;
+  cursor: pointer; transition: background 0.1s; display: flex; align-items: center; justify-content: space-between; }
+.station-list-item:hover { background: #f8f8f8; }
+.station-list-item:last-child { border-bottom: none; }
+.station-lines { display: flex; gap: 4px; flex-wrap: wrap; }
+.station-line-dot { width: 8px; height: 8px; border-radius: 50%; }
+.operator-group { margin-bottom: 12px; }
+.operator-group-title { font-size: 0.8rem; font-weight: 700; color: #666; margin-bottom: 6px; padding-left: 4px; }
+
+/* About page */
+.about-section { margin-bottom: 20px; }
+.about-section h2 { font-size: 1.1rem; margin-bottom: 8px; color: #333; }
+.about-section p { font-size: 0.85rem; color: #666; line-height: 1.6; }
+.fare-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+.fare-table th { background: #f5f5f5; padding: 6px 8px; text-align: left; font-weight: 600; border-bottom: 1px solid #e0e0e0; }
+.fare-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+.fare-table tr:last-child td { border-bottom: none; }
 </style>
 </head>
 <body>
+
+<!-- Page: Search -->
+<div id="page-search" class="page active">
 <div class="container">
   <h1>東京障がい者割引乗り換え探索</h1>
   <p class="subtitle">営業キロに基づく経路探索。メトロ・JRは通常料金、都営は無料、TX・京成は半額。</p>
@@ -107,8 +167,76 @@ optgroup { font-weight: 700; }
     </div>
     <button class="calc-btn" onclick="calculate()">経路を検索</button>
   </div>
-  <div class="card result" id="result"></div>
 </div>
+</div>
+
+<!-- Page: Results -->
+<div id="page-results" class="page">
+<div class="container">
+  <button class="back-btn" onclick="navigate('search')">&#8592; 検索に戻る</button>
+  <div class="result-summary" id="result-summary"></div>
+  <div id="result"></div>
+</div>
+</div>
+
+<!-- Page: Lines -->
+<div id="page-lines" class="page">
+<div class="container">
+  <h1>路線・駅一覧</h1>
+  <p class="subtitle">路線を選んで駅一覧を表示。駅名タップで出発駅に設定。</p>
+  <div id="line-list"></div>
+  <div id="station-list-container"></div>
+</div>
+</div>
+
+<!-- Page: About -->
+<div id="page-about" class="page">
+<div class="container">
+  <h1>アプリ情報</h1>
+  <p class="subtitle">東京障がい者割引乗り換え探索</p>
+  <div class="card about-section">
+    <h2>概要</h2>
+    <p>東京の地下鉄・JR・私鉄を対象にした障がい者割引運賃の最短経路探索アプリです。営業キロに基づくDijkstra法で複数の経路候補を生成し、各社の運賃テーブルで個別計算します。</p>
+  </div>
+  <div class="card about-section">
+    <h2>運賃計算</h2>
+    <table class="fare-table">
+      <tr><th>事業者</th><th>計算方法</th></tr>
+      <tr><td>東京メトロ</td><td>通常料金（バリアフリー料金込み）</td></tr>
+      <tr><td>都営地下鉄</td><td>無料</td></tr>
+      <tr><td>JR</td><td>改定後幹線運賃 / 特定区間運賃</td></tr>
+      <tr><td>つくばエクスプレス</td><td>半額（きっぷ10円単位切り上げ）</td></tr>
+      <tr><td>京成</td><td>運賃+BF10円 → 半額切り上げ</td></tr>
+    </table>
+  </div>
+  <div class="card about-section">
+    <h2>対応路線</h2>
+    <div id="about-lines"></div>
+  </div>
+  <div class="card about-section">
+    <h2>注意事項</h2>
+    <p>・実際の運賃とは異なる場合があります<br>
+       ・会社間の連絡運輸・乗継割引は考慮していません<br>
+       ・JR大都市近郊区間の特例（大回り乗車）は未対応<br>
+       ・一部の乗換は徒歩移動を伴います</p>
+  </div>
+</div>
+</div>
+
+<!-- Bottom Navigation -->
+<nav class="bottom-nav">
+<div class="bottom-nav-inner">
+  <a class="nav-item active" onclick="navigate('search')" data-page="search">
+    <span class="nav-icon">&#128269;</span><span class="nav-label">検索</span>
+  </a>
+  <a class="nav-item" onclick="navigate('lines')" data-page="lines">
+    <span class="nav-icon">&#128647;</span><span class="nav-label">路線</span>
+  </a>
+  <a class="nav-item" onclick="navigate('about')" data-page="about">
+    <span class="nav-icon">&#9432;</span><span class="nav-label">情報</span>
+  </a>
+</div>
+</nav>
 <script>
 // === STATION DATA ===
 const LINES = {
@@ -133,12 +261,20 @@ const LINES = {
   TX: { name: "つくばエクスプレス", color: "#2E67B1" },
   KS: { name: "京成本線", color: "#1E3C78" },
   KO: { name: "京成押上線", color: "#1E3C78" },
+  JE: { name: "京葉線", color: "#C9252F" },
+  JO: { name: "横須賀・総武快速線", color: "#0067C0" },
+  JM: { name: "武蔵野線", color: "#E96734" },
+  JT: { name: "東海道線", color: "#F68B1E" },
+  JK: { name: "京浜東北線", color: "#00B2E5" },
+  JN: { name: "南武線", color: "#FFD400" },
+  JH: { name: "横浜線", color: "#7FC97F" },
+  JA: { name: "埼京線", color: "#00AC9B" },
 };
 
 const METRO_LINES = new Set(["G","M","Mb","H","T","C","Y","Z","N","F"]);
 function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
 const TOEI_LINES = new Set(["A","I","S","E"]);
-const JR_LINES = new Set(["JY","JC","JB","JJ"]);
+const JR_LINES = new Set(["JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA"]);
 const TX_LINES = new Set(["TX"]);
 const KEISEI_LINES = new Set(["KS","KO"]);
 function operatorOf(lineCode) {
@@ -295,6 +431,71 @@ const S = [
 [457,"京成臼井","KS"],[458,"京成佐倉","KS"],[459,"大佐倉","KS"],
 [460,"京成酒々井","KS"],[461,"宗吾参道","KS"],[462,"公津の杜","KS"],
 [463,"京成成田","KS"],[464,"空港第2ビル","KS"],[465,"成田空港","KS"],
+// 京葉線 466-483
+[466,"東京","JE"],[467,"八丁堀","JE"],[468,"越中島","JE"],[469,"潮見","JE"],
+[470,"新木場","JE"],[471,"葛西臨海公園","JE"],[472,"舞浜","JE"],[473,"新浦安","JE"],
+[474,"市川塩浜","JE"],[475,"二俣新町","JE"],[476,"南船橋","JE"],[477,"新習志野","JE"],
+[478,"幕張豊砂","JE"],[479,"海浜幕張","JE"],[480,"検見川浜","JE"],[481,"稲毛海岸","JE"],
+[482,"千葉みなと","JE"],[483,"蘇我","JE"],
+// 横須賀・総武快速線 484-511
+[484,"久里浜","JO"],[485,"衣笠","JO"],[486,"横須賀","JO"],[487,"田浦","JO"],
+[488,"東逗子","JO"],[489,"逗子","JO"],[490,"鎌倉","JO"],[491,"北鎌倉","JO"],
+[492,"大船","JO"],[493,"戸塚","JO"],[494,"東戸塚","JO"],[495,"保土ケ谷","JO"],
+[496,"横浜","JO"],[497,"新川崎","JO"],[498,"武蔵小杉","JO"],[499,"西大井","JO"],
+[500,"品川","JO"],[501,"新橋","JO"],[502,"東京","JO"],
+[503,"新日本橋","JO"],[504,"馬喰町","JO"],
+[505,"錦糸町","JO"],[506,"新小岩","JO"],[507,"市川","JO"],[508,"船橋","JO"],
+[509,"津田沼","JO"],[510,"稲毛","JO"],[511,"千葉","JO"],
+// 武蔵野線 512-537
+[512,"府中本町","JM"],[513,"北府中","JM"],[514,"西国分寺","JM"],[515,"新小平","JM"],
+[516,"新秋津","JM"],[517,"東所沢","JM"],[518,"新座","JM"],[519,"北朝霞","JM"],
+[520,"西浦和","JM"],[521,"武蔵浦和","JM"],[522,"南浦和","JM"],[523,"東浦和","JM"],
+[524,"東川口","JM"],[525,"南越谷","JM"],[526,"越谷レイクタウン","JM"],[527,"吉川","JM"],
+[528,"吉川美南","JM"],[529,"新三郷","JM"],[530,"三郷","JM"],[531,"南流山","JM"],
+[532,"新松戸","JM"],[533,"新八柱","JM"],[534,"東松戸","JM"],[535,"市川大野","JM"],
+[536,"船橋法典","JM"],[537,"西船橋","JM"],
+// 東海道線 538-558
+[538,"東京","JT"],[539,"新橋","JT"],[540,"品川","JT"],[541,"川崎","JT"],
+[542,"横浜","JT"],[543,"戸塚","JT"],[544,"大船","JT"],[545,"藤沢","JT"],
+[546,"辻堂","JT"],[547,"茅ケ崎","JT"],[548,"平塚","JT"],[549,"大磯","JT"],
+[550,"二宮","JT"],[551,"国府津","JT"],[552,"鴨宮","JT"],[553,"小田原","JT"],
+[554,"早川","JT"],[555,"根府川","JT"],[556,"真鶴","JT"],[557,"湯河原","JT"],
+[558,"熱海","JT"],
+// 京浜東北線 559-594
+[559,"大宮","JK"],[560,"さいたま新都心","JK"],[561,"与野","JK"],[562,"北浦和","JK"],
+[563,"浦和","JK"],[564,"南浦和","JK"],[565,"蕨","JK"],[566,"西川口","JK"],
+[567,"川口","JK"],[568,"赤羽","JK"],[569,"東十条","JK"],[570,"王子","JK"],
+[571,"上中里","JK"],[572,"田端","JK"],[573,"西日暮里","JK"],[574,"日暮里","JK"],
+[575,"鶯谷","JK"],[576,"上野","JK"],[577,"御徒町","JK"],[578,"秋葉原","JK"],
+[579,"神田","JK"],[580,"東京","JK"],[581,"有楽町","JK"],[582,"新橋","JK"],
+[583,"浜松町","JK"],[584,"田町","JK"],[585,"高輪ゲートウェイ","JK"],
+[586,"品川","JK"],[587,"大井町","JK"],[588,"大森","JK"],[589,"蒲田","JK"],
+[590,"川崎","JK"],[591,"鶴見","JK"],[592,"新子安","JK"],[593,"東神奈川","JK"],
+[594,"横浜","JK"],
+// 根岸線（京浜東北線続き）595-605
+[595,"桜木町","JK"],[596,"関内","JK"],[597,"石川町","JK"],[598,"山手","JK"],
+[599,"根岸","JK"],[600,"磯子","JK"],[601,"新杉田","JK"],[602,"洋光台","JK"],
+[603,"港南台","JK"],[604,"本郷台","JK"],[605,"大船","JK"],
+// 南武線 606-631
+[606,"川崎","JN"],[607,"尻手","JN"],[608,"矢向","JN"],[609,"鹿島田","JN"],
+[610,"平間","JN"],[611,"向河原","JN"],[612,"武蔵小杉","JN"],[613,"武蔵中原","JN"],
+[614,"武蔵新城","JN"],[615,"武蔵溝ノ口","JN"],[616,"津田山","JN"],[617,"久地","JN"],
+[618,"宿河原","JN"],[619,"登戸","JN"],[620,"中野島","JN"],[621,"稲田堤","JN"],
+[622,"矢野口","JN"],[623,"稲城長沼","JN"],[624,"南多摩","JN"],[625,"府中本町","JN"],
+[626,"分倍河原","JN"],[627,"西府","JN"],[628,"谷保","JN"],[629,"矢川","JN"],
+[630,"西国立","JN"],[631,"立川","JN"],
+// 横浜線 632-651
+[632,"東神奈川","JH"],[633,"大口","JH"],[634,"菊名","JH"],[635,"新横浜","JH"],
+[636,"小机","JH"],[637,"鴨居","JH"],[638,"中山","JH"],[639,"十日市場","JH"],
+[640,"長津田","JH"],[641,"成瀬","JH"],[642,"町田","JH"],[643,"古淵","JH"],
+[644,"淵野辺","JH"],[645,"矢部","JH"],[646,"相模原","JH"],[647,"橋本","JH"],
+[648,"相原","JH"],[649,"八王子みなみ野","JH"],[650,"片倉","JH"],[651,"八王子","JH"],
+// 埼京線 652-670
+[652,"大崎","JA"],[653,"恵比寿","JA"],[654,"渋谷","JA"],[655,"新宿","JA"],
+[656,"池袋","JA"],[657,"板橋","JA"],[658,"十条","JA"],[659,"赤羽","JA"],
+[660,"北赤羽","JA"],[661,"浮間舟渡","JA"],[662,"戸田公園","JA"],[663,"戸田","JA"],
+[664,"北戸田","JA"],[665,"武蔵浦和","JA"],[666,"中浦和","JA"],[667,"南与野","JA"],
+[668,"与野本町","JA"],[669,"北与野","JA"],[670,"大宮","JA"],
 ];
 
 // === EDGES (adjacent stations with 営業キロ) ===
@@ -373,7 +574,8 @@ const EDGES = [
 // JR 山手線 (loop)
 [286,287,1.3],[287,288,0.7],[288,289,1.0],[289,290,0.6],[290,291,1.1],[291,292,1.1],[292,293,0.5],[293,294,0.8],[294,295,1.6],[295,296,0.7],[296,297,1.1],[297,298,1.8],[298,299,1.2],[299,300,0.9],[300,301,1.4],[301,302,1.3],[302,303,0.7],[303,304,1.5],[304,305,1.2],[305,306,1.6],[306,307,1.5],[307,308,1.2],[308,309,0.9],[309,310,2.0],[310,311,0.9],[311,312,1.3],[312,313,1.5],[313,314,1.2],[314,315,1.1],[315,286,0.8],
 // JR 中央線快速
-[316,317,1.3],[317,318,1.3],[318,319,4.0],[319,320,3.7],[320,321,4.4],[321,322,1.4],[322,323,1.2],[323,324,1.4],[324,325,1.9],[325,326,1.9],[326,327,1.6],[327,328,1.6],[328,329,1.7],[329,330,1.7],[330,331,2.3],[331,332,1.4],[332,333,1.7],[333,334,3.0],[334,335,3.3],[335,336,2.3],[336,337,4.3],[337,338,2.4],[338,339,3.3],
+// [316,317,1.3], // 中央線快速 東京〜神田 運休中（工事に伴う使用一時停止）
+[317,318,1.3],[318,319,4.0],[319,320,3.7],[320,321,4.4],[321,322,1.4],[322,323,1.2],[323,324,1.4],[324,325,1.9],[325,326,1.9],[326,327,1.6],[327,328,1.6],[328,329,1.7],[329,330,1.7],[330,331,2.3],[331,332,1.4],[332,333,1.7],[333,334,3.0],[334,335,3.3],[335,336,2.3],[336,337,4.3],[337,338,2.4],[338,339,3.3],
 // JR 総武線各停
 [340,341,1.6],[341,342,1.9],[342,343,1.9],[343,344,1.4],[344,345,1.2],[345,346,1.4],[346,347,1.9],[347,348,1.1],[348,349,1.4],[349,350,0.7],[350,351,1.0],[351,352,0.7],[352,353,1.3],[353,354,0.8],[354,355,1.5],[355,356,0.9],[356,357,0.8],[357,358,0.9],[358,359,1.1],[359,360,0.8],[360,361,1.5],[361,362,1.5],[362,363,1.9],[363,364,1.8],[364,365,2.8],[365,366,2.6],[366,367,2.0],[367,368,1.6],[368,369,1.6],[369,370,2.6],[370,371,1.8],[371,372,1.7],[372,373,2.9],[373,374,2.0],[374,375,1.6],[375,376,2.7],[376,377,1.9],[377,378,1.4],
 // JR 常磐線
@@ -385,6 +587,55 @@ const EDGES = [
 // 京成押上線 (Wikipedia準拠)
 [418,419,1.1],[419,420,1.2],[420,421,0.8],[421,422,1.5],[422,423,1.1],
 // 京成本線 (Wikipedia準拠)
+// 武蔵野線
+[512,513,1.7],[513,514,2.2],[514,515,3.5],[515,516,5.6],[516,517,2.7],
+[517,518,4.0],[518,519,3.1],[519,520,5.0],[520,521,2.0],[521,522,1.9],
+[522,523,3.7],[523,524,3.8],[524,525,4.3],[525,526,2.8],[526,527,1.9],
+[527,528,1.6],[528,529,1.5],[529,530,2.1],[530,531,2.0],[531,532,2.1],
+[532,533,4.1],[533,534,2.4],[534,535,1.9],[535,536,3.0],[536,537,2.9],
+// 東海道線
+[538,539,1.9],[539,540,4.9],[540,541,11.4],[541,542,10.6],[542,543,12.1],
+[543,544,5.6],[544,545,4.6],[545,546,3.7],[546,547,3.8],[547,548,5.2],
+[548,549,4.0],[549,550,5.3],[550,551,4.6],[551,552,3.1],[552,553,3.1],
+[553,554,2.1],[554,555,4.4],[555,556,5.4],[556,557,3.3],[557,558,5.5],
+// 京浜東北線
+[559,560,1.6],[560,561,1.1],[561,562,1.6],[562,563,1.8],[563,564,1.7],
+[564,565,2.8],[565,566,1.9],[566,567,2.0],[567,568,2.6],[568,569,1.8],
+[569,570,1.5],[570,571,1.1],[571,572,1.7],[572,573,0.8],[573,574,0.5],
+[574,575,1.1],[575,576,1.1],[576,577,0.6],[577,578,1.0],[578,579,0.7],
+[579,580,1.3],[580,581,0.8],[581,582,1.1],[582,583,1.2],[583,584,1.5],
+[584,585,1.3],[585,586,0.9],[586,587,2.4],[587,588,2.2],[588,589,3.0],
+[589,590,3.8],[590,591,3.5],[591,592,3.1],[592,593,2.2],[593,594,1.8],
+// 根岸線（JK横浜→大船）
+[594,595,2.0],[595,596,1.0],[596,597,0.8],[597,598,1.2],[598,599,2.1],
+[599,600,2.4],[600,601,1.6],[601,602,3.0],[602,603,1.9],[603,604,2.5],[604,605,3.6],
+// 南武線
+[606,607,1.7],[607,608,0.9],[608,609,1.5],[609,610,1.2],[610,611,1.3],
+[611,612,0.9],[612,613,1.7],[613,614,1.3],[614,615,2.2],[615,616,1.2],
+[616,617,1.0],[617,618,1.3],[618,619,1.1],[619,620,2.2],[620,621,1.3],
+[621,622,1.6],[622,623,1.7],[623,624,1.4],[624,625,2.4],[625,626,0.9],
+[626,627,1.2],[627,628,1.6],[628,629,1.4],[629,630,1.3],[630,631,1.2],
+// 横浜線
+[632,633,2.2],[633,634,2.6],[634,635,1.3],[635,636,1.7],[636,637,3.1],
+[637,638,2.6],[638,639,2.4],[639,640,2.0],[640,641,2.3],[641,642,2.7],
+[642,643,2.8],[643,644,2.7],[644,645,0.8],[645,646,1.8],[646,647,2.8],
+[647,648,1.9],[648,649,2.9],[649,650,1.4],[650,651,2.6],
+// 埼京線
+[652,653,3.6],[653,654,1.6],[654,655,3.4],[655,656,4.8],[656,657,1.8],
+[657,658,1.7],[658,659,2.0],[659,660,1.5],[660,661,1.6],[661,662,2.4],
+[662,663,1.3],[663,664,1.4],[664,665,2.4],[665,666,1.2],[666,667,1.7],
+[667,668,1.6],[668,669,1.1],[669,670,1.8],
+// 京葉線
+[466,467,1.2],[467,468,1.6],[468,469,2.6],[469,470,2.0],[470,471,3.2],
+[471,472,2.1],[472,473,3.4],[473,474,2.1],[474,475,4.4],[475,476,3.4],
+[476,477,2.3],[477,478,1.7],[478,479,1.7],[479,480,2.0],[480,481,1.6],[481,482,3.7],[482,483,4.0],
+// 横須賀・総武快速線
+[484,485,4.6],[485,486,3.4],[486,487,2.1],[487,488,3.4],[488,489,2.0],
+[489,490,3.9],[490,491,2.2],[491,492,2.3],[492,493,5.6],[493,494,4.2],
+[494,495,4.9],[495,496,3.0],[496,497,12.2],[497,498,2.7],[498,499,6.4],
+[499,500,3.6],[500,501,4.9],[501,502,1.9],[502,503,1.2],[503,504,1.1],
+[504,505,2.5],[505,506,5.2],[506,507,5.4],[507,508,7.8],[508,509,3.5],
+[509,510,9.2],[510,511,3.3],
 [424,425,2.1],[425,426,1.3],[426,427,1.0],[427,428,1.5],[428,429,1.4],
 [429,430,1.2],[430,431,1.4],[431,432,1.6],[432,433,1.2],[433,434,1.8],
 [434,435,1.2],[435,436,0.7],[436,437,0.9],[437,438,0.9],[438,439,0.9],
@@ -422,6 +673,12 @@ const CROSS_TRANSFERS = [
   [445,370],           // 京成船橋 ↔ 船橋(JB)
   [449,372],           // 京成津田沼 ↔ 津田沼(JB)
   [443,369],[443,91],  // 京成西船 ↔ 西船橋(JB,T)
+  // JO cross-name
+  [503,7],[503,144],   // 新日本橋(JO) ↔ 三越前(G,Z)
+  [504,194],[504,235], // 馬喰町(JO) ↔ 東日本橋(A),馬喰横山(S)
+  // JN/JA cross-name
+  [609,497],           // 鹿島田(JN) ↔ 新川崎(JO)
+  [657,216],           // 板橋(JA) ↔ 新板橋(I)
 ];
 
 // === FARE ZONES (Metro, with barrier-free surcharge, 2023) ===
@@ -568,7 +825,7 @@ function routeSig(path) {
 }
 
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
-function lineFamily(code) { return (code==="JC"||code==="JB") ? "JR_CHUO" : code; }
+function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
 
 const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
 function dijkstraP(srcSet, dstSet, penalty, transferCost) {
@@ -701,7 +958,7 @@ const CROSS_NAME_MAP = {
   "日比谷": ["有楽町"], "有楽町": ["日比谷"],
   "春日": ["後楽園"], "後楽園": ["春日"],
   "新宿西口": ["新宿"],
-  "東日本橋": ["馬喰横山"], "馬喰横山": ["東日本橋"],
+  "東日本橋": ["馬喰横山","馬喰町"], "馬喰横山": ["東日本橋","馬喰町"],
   "岩本町": ["秋葉原"], "秋葉原": ["岩本町"],
   "御茶ノ水": ["新御茶ノ水"],
   "御徒町": ["上野御徒町","上野広小路","仲御徒町"],
@@ -710,6 +967,10 @@ const CROSS_NAME_MAP = {
   "京成船橋": ["船橋"], "船橋": ["京成船橋"],
   "京成津田沼": ["津田沼"], "津田沼": ["京成津田沼"],
   "京成西船": ["西船橋"], "西船橋": ["京成西船"],
+  "新日本橋": ["三越前"], "三越前": ["新日本橋"],
+  "馬喰町": ["東日本橋","馬喰横山"],
+  "鹿島田": ["新川崎"], "新川崎": ["鹿島田"],
+  "板橋": ["新板橋"], "新板橋": ["板橋"],
 };
 function addCrossTransferIds(name, idSet) {
   if (CROSS_NAME_MAP[name]) {
@@ -788,7 +1049,7 @@ function calcRouteFare(path) {
 }
 
 // === UI ===
-const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","TX","KS","KO"];
+const LINE_ORDER = ["G","M","Mb","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","TX","KS","KO"];
 const lineStations = {};
 for (const code of LINE_ORDER) {
   const stns = [];
@@ -889,39 +1150,32 @@ function calculate() {
   const fromName = document.getElementById("from").value.trim();
   const toName = document.getElementById("to").value.trim();
   const resultEl = document.getElementById("result");
+  const summaryEl = document.getElementById("result-summary");
 
-  if (!fromName || !toName) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">出発駅と到着駅を入力してください</div>';
-    return;
+  function showError(msg) {
+    resultEl.innerHTML = '<div class="error">' + msg + '</div>';
+    summaryEl.innerHTML = '';
+    navigate('results');
   }
-  if (fromName === toName) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">出発駅と到着駅が同じです</div>';
-    return;
-  }
-  if (!nameToIds[fromName]) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">「' + escHtml(fromName) + '」という駅が見つかりません</div>';
-    return;
-  }
-  if (!nameToIds[toName]) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">「' + escHtml(toName) + '」という駅が見つかりません</div>';
-    return;
-  }
+
+  if (!fromName || !toName) { showError('出発駅と到着駅を入力してください'); return; }
+  if (fromName === toName) { showError('出発駅と到着駅が同じです'); return; }
+  if (!nameToIds[fromName]) { showError('「' + escHtml(fromName) + '」という駅が見つかりません'); return; }
+  if (!nameToIds[toName]) { showError('「' + escHtml(toName) + '」という駅が見つかりません'); return; }
 
   lastRoutes = findKRoutes(fromName, toName);
-  if (!lastRoutes.length) {
-    resultEl.className = "card result show";
-    resultEl.innerHTML = '<div class="error">経路が見つかりませんでした</div>';
-    return;
-  }
+  if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
+
+  lastFromName = fromName;
+  lastToName = toName;
   currentSort = 'recommend';
   renderRoutes();
+  navigate('results');
 }
 
 let lastRoutes = [];
+let lastFromName = '';
+let lastToName = '';
 let currentSort = 'recommend';
 
 function sortRoutes(key) {
@@ -931,6 +1185,8 @@ function sortRoutes(key) {
 
 function renderRoutes() {
   const resultEl = document.getElementById("result");
+  const summaryEl = document.getElementById("result-summary");
+  summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>';
   const sorted = [...lastRoutes];
   const cmp = {
     recommend:(a,b) => a.score - b.score,
@@ -975,7 +1231,7 @@ function renderRoutes() {
     if (fi.metroFares.length > 1 || (fi.metroFares.length === 1 && !fi.allMetro)) {
       html += '<div class="fare-breakdown">';
       html += fi.metroFares.map(f => {
-        const tag = f.op === "jr" ? "JR" : "メトロ";
+        const tag = {jr:"JR",metro:"メトロ",tx:"TX",keisei:"京成"}[f.op] || f.op;
         return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>';
       }).join(' ＋ ');
       html += '</div>';
@@ -1003,7 +1259,6 @@ function renderRoutes() {
     html += '</details></div>';
   }
 
-  resultEl.className = "card result show";
   resultEl.innerHTML = html;
 }
 
@@ -1079,6 +1334,149 @@ function isCrossTransfer(a, b) {
 
 function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// === SPA ROUTER ===
+const PAGES = ['search', 'results', 'lines', 'about'];
+let currentPage = 'search';
+
+function navigate(page, pushState) {
+  if (!PAGES.includes(page)) page = 'search';
+  currentPage = page;
+  for (const p of PAGES) {
+    const el = document.getElementById('page-' + p);
+    if (p === page) { el.classList.add('active'); }
+    else { el.classList.remove('active'); }
+  }
+  for (const item of document.querySelectorAll('.nav-item')) {
+    const navPage = item.dataset.page;
+    if (navPage === page || (navPage === 'search' && page === 'results')) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  }
+  if (pushState !== false) {
+    history.pushState({ page }, '', '#' + page);
+  }
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener('popstate', function(e) {
+  const page = (e.state && e.state.page) || location.hash.replace('#', '') || 'search';
+  navigate(page, false);
+});
+
+// === LINES PAGE ===
+let selectedLine = null;
+
+function renderLineList() {
+  const container = document.getElementById('line-list');
+  const groups = [
+    { label: '東京メトロ', codes: LINE_ORDER.filter(c => operatorOf(c) === 'metro') },
+    { label: '都営地下鉄', codes: LINE_ORDER.filter(c => operatorOf(c) === 'toei') },
+    { label: 'JR', codes: LINE_ORDER.filter(c => operatorOf(c) === 'jr') },
+    { label: 'その他', codes: LINE_ORDER.filter(c => operatorOf(c) !== 'metro' && operatorOf(c) !== 'toei' && operatorOf(c) !== 'jr') },
+  ];
+  let html = '';
+  for (const g of groups) {
+    html += '<div class="operator-group"><div class="operator-group-title">' + g.label + '</div><div class="line-list">';
+    for (const code of g.codes) {
+      const li = LINES[code];
+      const count = lineStations[code].length;
+      html += '<div class="line-item' + (selectedLine === code ? ' selected' : '') + '" onclick="selectLine(\'' + code + '\')">';
+      html += '<div class="line-dot" style="background:' + li.color + '"></div>';
+      html += '<span class="line-item-name">' + li.name + '</span>';
+      html += '<span class="line-item-count">' + count + '駅</span>';
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+}
+
+function selectLine(code) {
+  selectedLine = (selectedLine === code) ? null : code;
+  renderLineList();
+  renderStationList();
+}
+
+function renderStationList() {
+  const container = document.getElementById('station-list-container');
+  if (!selectedLine) { container.innerHTML = ''; return; }
+  const li = LINES[selectedLine];
+  const stns = lineStations[selectedLine];
+  let html = '<div class="station-list">';
+  html += '<div class="station-list-header"><div class="line-dot" style="background:' + li.color + '"></div>' + li.name + '（' + stns.length + '駅）</div>';
+  for (const name of stns) {
+    const ids = nameToIds[name] || [];
+    const otherLines = [...new Set(ids.map(id => S[id][2]).filter(c => c !== selectedLine))];
+    html += '<div class="station-list-item" onclick="setStationFromLines(\'' + escHtml(name).replace(/'/g, "\\'") + '\')">';
+    html += '<span>' + escHtml(name) + '</span>';
+    if (otherLines.length) {
+      html += '<span class="station-lines">';
+      for (const c of otherLines) {
+        html += '<span class="station-line-dot" style="background:' + LINES[c].color + '" title="' + LINES[c].name + '"></span>';
+      }
+      html += '</span>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function setStationFromLines(name) {
+  document.getElementById('from').value = name;
+  document.getElementById('from-line').value = '';
+  updateStations('from');
+  navigate('search');
+}
+
+// === ABOUT PAGE: line list ===
+function renderAboutLines() {
+  const el = document.getElementById('about-lines');
+  const groups = [
+    { label: '東京メトロ', codes: LINE_ORDER.filter(c => operatorOf(c) === 'metro') },
+    { label: '都営地下鉄', codes: LINE_ORDER.filter(c => operatorOf(c) === 'toei') },
+    { label: 'JR', codes: LINE_ORDER.filter(c => operatorOf(c) === 'jr') },
+    { label: 'その他', codes: LINE_ORDER.filter(c => operatorOf(c) !== 'metro' && operatorOf(c) !== 'toei' && operatorOf(c) !== 'jr') },
+  ];
+  let html = '';
+  for (const g of groups) {
+    html += '<div style="margin-bottom:8px"><span style="font-size:0.8rem;font-weight:700;color:#666">' + g.label + '</span><br>';
+    html += g.codes.map(c => '<span class="line-badge" style="background:' + LINES[c].color + ';margin:2px">' + LINES[c].name + '</span>').join(' ');
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+// === INIT ===
+renderLineList();
+renderAboutLines();
+
+const initHash = location.hash.replace('#', '');
+if (PAGES.includes(initHash)) {
+  navigate(initHash, false);
+} else {
+  history.replaceState({ page: 'search' }, '', '#search');
+}
+
+// === SERVICE WORKER ===
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w.addEventListener('statechange', () => {
+        if (w.state === 'installed' && navigator.serviceWorker.controller) {
+          if (confirm('新しいバージョンがあります。更新しますか？')) {
+            w.postMessage('skipWaiting');
+          }
+        }
+      });
+    });
+  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
 }
 
 </script>
