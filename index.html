@@ -946,8 +946,16 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  results.sort((a, b) => a.score - b.score);
-  return results;
+  // Dedupe: same distance + fare + transfers = same route → keep fewer stops
+  const byKey = new Map();
+  for (const r of results) {
+    const key = r.distance.toFixed(1) + '|' + r.price + '|' + r.transfers;
+    const prev = byKey.get(key);
+    if (!prev || r.stops < prev.stops) byKey.set(key, r);
+  }
+  const deduped = [...byKey.values()];
+  deduped.sort((a, b) => a.score - b.score);
+  return deduped;
 }
 
 // Cross-name station groups
