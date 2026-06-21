@@ -136,8 +136,7 @@ optgroup { font-weight: 700; }
 .station-set-btn { padding: 6px 14px; border: 1px solid #0089c7; border-radius: 6px; background: #fff;
   color: #0089c7; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
 .station-set-btn:hover, .station-set-btn:active { background: #0089c7; color: #fff; }
-.route-stops-detail { margin: 2px 0 0 32px; font-size: 0.78rem; color: #888; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.route-stops-list { font-size: 0.75rem; color: #666; padding: 4px 0 4px 8px; line-height: 1.8; }
+.route-stops-list { font-size: 0.75rem; color: #666; line-height: 1.8; }
 </style>
 </head>
 <body>
@@ -1292,32 +1291,40 @@ function buildRouteHtml(path) {
     const seg = segments[si];
     const fd = familyDisplay(seg.line);
     const c = fd.color;
-    const first = seg.stations[0];
-    const last = seg.stations[seg.stations.length - 1];
-    const stCount = seg.stations.length;
-
-    html += '<div class="route-station">';
-    html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-    html += '<div class="route-name">' + escHtml(S[first][1]);
-    html += '<span class="line-badge" style="background:' + c + '">' + fd.name + '</span>';
-    if (si > 0) {
-      html += '<span class="route-transfer">乗換</span>';
-      const prevSeg = segments[si-1];
-      const prevLast = prevSeg.stations[prevSeg.stations.length-1];
-      const farNote = getFarNote(prevLast, first);
-      if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
+    // dedupe same physical station (same grp) within segment
+    const uniq = [seg.stations[0]];
+    for (let k = 1; k < seg.stations.length; k++) {
+      if (grp[seg.stations[k]] !== grp[seg.stations[k-1]]) uniq.push(seg.stations[k]);
     }
-    html += '</div></div>';
+    const first = uniq[0];
+    const last = uniq[uniq.length - 1];
+    const stCount = uniq.length;
+
+    // skip start station if same physical station as previous segment's end
+    const skipStart = si > 0 && grp[first] === grp[segments[si-1].stations[segments[si-1].stations.length-1]];
+
+    if (!skipStart) {
+      html += '<div class="route-station">';
+      html += '<div class="route-dot" style="border-color:' + c + '"></div>';
+      html += '<div class="route-name">' + escHtml(S[first][1]);
+      html += '<span class="line-badge" style="background:' + c + '">' + fd.name + '</span>';
+      if (si > 0) {
+        html += '<span class="route-transfer">乗換</span>';
+        const prevSeg = segments[si-1];
+        const prevLast = prevSeg.stations[prevSeg.stations.length-1];
+        const farNote = getFarNote(prevLast, first);
+        if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
+      }
+      html += '</div></div>';
+    }
 
     if (stCount > 1) {
+      const midStations = uniq.slice(1, -1).map(id => escHtml(S[id][1]));
       html += '<div class="route-segment">';
       html += '<div class="route-segment-bar" style="background:' + c + '"></div>';
       html += '<div class="route-segment-info">';
-      if (stCount > 2) {
-        const stopsId = 'stops-' + si + '-' + first;
-        const midStations = seg.stations.slice(1, -1).map(id => escHtml(S[id][1]));
-        html += '<span class="route-stops-detail" onclick="toggleStops(\'' + stopsId + '\')">' + (stCount - 2) + '駅 ▼</span>';
-        html += '<div id="' + stopsId + '" class="route-stops-list" style="display:none">' + midStations.join(' → ') + '</div>';
+      if (midStations.length > 0) {
+        html += '<span class="route-stops-list">' + midStations.join(' → ') + '</span>';
       }
       html += '</div></div>';
 
@@ -1350,13 +1357,6 @@ function escHtml(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
-function toggleStops(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const show = el.style.display === 'none';
-  el.style.display = show ? 'block' : 'none';
-  el.previousElementSibling.textContent = el.previousElementSibling.textContent.replace(/[▼▲]/, show ? '▲' : '▼');
-}
 
 // === SPA ROUTER ===
 const PAGES = ['search', 'results', 'lines', 'about'];
