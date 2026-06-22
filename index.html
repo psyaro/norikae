@@ -951,7 +951,7 @@ function findKRoutes(fromName, toName) {
         const pairKey = edges[a] + '_' + edges[b];
         if (tried2.has(pairKey)) continue;
         tried2.add(pairKey);
-        for (const tc3 of [0, 2]) {
+        for (const tc3 of [0, 1, 2, 5, 15]) {
           const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc3);
           if (alt) addResult(alt);
         }
@@ -971,7 +971,7 @@ function findKRoutes(fromName, toName) {
       if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
       triedNode.add(g);
       const pen = nodeBlockPenalty(g);
-      for (const tc of [0, 3]) {
+      for (const tc of [0, 1, 3, 8]) {
         const alt = dijkstraP(srcSet, dstSet, pen, tc);
         if (alt) addResult(alt);
       }
@@ -1027,22 +1027,29 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  // Dedupe by route shape (line-family segments: どの系統でどの駅間を乗るか).
-  // 中央線快速⇔中央・総武線各停や山手線⇔京浜東北線のように、
-  // 同じ系統で同じ駅間を移動する経路は停車駅が違っても1つに統合。
-  // 統合時は距離最小→乗換最少→駅数最少（=速い方）を残す。
+  // Dedupe: shape(系統区間) + 距離 + 乗換回数 をキーに、各グループで駅数最小を残す。
+  // - 距離が違えば別候補（統合しない）
+  // - 同じ距離でも乗換回数が違えば別候補（乗換違いを見せる）
+  // - 同一(shape,距離,乗換)内は駅数最小（=速い方、中央快速⇔各停など）を採用
   const byKey = new Map();
   for (const r of results) {
-    const key = routeShape(r.path);
+    const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
     const prev = byKey.get(key);
-    if (!prev
-        || r.distance < prev.distance
-        || (r.distance === prev.distance && r.transfers < prev.transfers)
-        || (r.distance === prev.distance && r.transfers === prev.transfers && r.stops < prev.stops)) {
-      byKey.set(key, r);
-    }
+    if (!prev || r.stops < prev.stops) byKey.set(key, r);
   }
-  const deduped = [...byKey.values()];
+  let deduped = [...byKey.values()];
+
+  // 各(shape,距離)グループで、乗換回数は最少〜最少+1回までに制限。
+  const minTrans = new Map();
+  for (const r of deduped) {
+    const sk = routeShape(r.path) + '|' + r.distance.toFixed(1);
+    if (!minTrans.has(sk) || r.transfers < minTrans.get(sk)) minTrans.set(sk, r.transfers);
+  }
+  deduped = deduped.filter(r => {
+    const sk = routeShape(r.path) + '|' + r.distance.toFixed(1);
+    return r.transfers <= minTrans.get(sk) + 1;
+  });
+
   deduped.sort((a, b) => a.score - b.score);
   return deduped;
 }
@@ -1247,6 +1254,14 @@ function swapStations() {
 // Initialize datalists with all stations
 fillDatalist("from", allStationNames);
 fillDatalist("to", allStationNames);
+
+// 初期表示: 丸ノ内線 東京 → 丸ノ内線 新宿
+document.getElementById("from-line").value = "M";
+updateStations("from");
+document.getElementById("from").value = "東京";
+document.getElementById("to-line").value = "M";
+updateStations("to");
+document.getElementById("to").value = "新宿";
 
 function calculate() {
   const fromName = document.getElementById("from").value.trim();
