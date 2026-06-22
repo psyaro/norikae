@@ -918,8 +918,14 @@ function routeShape(path) {
 
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
-const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
+const COMPANY_COST = 15; // search penalty for switching to a paid operator
+const TOEI_CROSS_COST = 2; // lower penalty for switches involving Toei (free fare)
 const INTRA_FAMILY_COST = 0.3; // small penalty for switching lines within same family (e.g. JY↔JK)
+function companyCost(opA, opB) {
+  if (opA === opB) return 0;
+  if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
+  return COMPANY_COST;
+}
 function dijkstraP(srcSet, dstSet, penalty, transferCost) {
   transferCost = transferCost || 0;
   const dist = new Float64Array(N).fill(Infinity);
@@ -932,12 +938,11 @@ function dijkstraP(srcSet, dstSet, penalty, transferCost) {
     if (d > dist[u]) continue;
     for (const {to: v, w} of adj[u]) {
       const key = Math.min(u,v)*1000+Math.max(u,v);
-      // w===0 edge = transfer connection (same/cross-name station)
       let tc = 0;
       if (w === 0) {
         if (lineFamily(S[u][2]) !== lineFamily(S[v][2])) {
           tc = transferCost;
-          if (operatorOf(S[u][2]) !== operatorOf(S[v][2])) tc += COMPANY_COST;
+          tc += companyCost(operatorOf(S[u][2]), operatorOf(S[v][2]));
         } else if (S[u][2] !== S[v][2]) {
           tc = INTRA_FAMILY_COST;
         }
@@ -1078,14 +1083,17 @@ function findKRoutes(fromName, toName) {
     const fi = calcRouteFare(r.path);
     r.fareInfo = fi;
     r.price = fi.totalTicket; // Metro + JR fare (Toei = free)
-    // 会社またぎ回数: operator changes along the path
-    let cross = 0;
+    // 会社またぎ: 有料会社またぎ(paidCross)と都営またぎ(toeiCross)を分離
+    let paidCross = 0, toeiCross = 0;
     for (let i = 1; i < r.path.length; i++) {
-      if (operatorOf(S[r.path[i-1]][2]) !== operatorOf(S[r.path[i]][2])) cross++;
+      const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
+      if (opA !== opB) {
+        if (opA === 'toei' || opB === 'toei') toeiCross++;
+        else paidCross++;
+      }
     }
-    r.cross = cross;
-    // おすすめスコア: 距離 + 乗換ペナルティ + 会社またぎペナルティ
-    r.score = r.distance + r.transfers * 2 + r.cross * 12;
+    r.cross = paidCross + toeiCross;
+    r.score = r.distance + r.transfers * 2 + paidCross * 12 + toeiCross * 2;
   }
 
   // Dedupe: shape(系統区間) + 距離 + 乗換回数 をキーに、各グループで駅数最小を残す。
