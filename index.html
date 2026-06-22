@@ -910,14 +910,33 @@ function findKRoutes(fromName, toName) {
 
   // Extra diversity: single-edge blocking on all found routes at multiple tc levels
   const tried1 = new Set();
-  for (let ri = 0; ri < results.length; ri++) {
+  const round1Count = results.length;
+  for (let ri = 0; ri < round1Count; ri++) {
     const edges = realEdges(results[ri].path);
     for (const key of edges) {
       if (tried1.has(key)) continue;
       tried1.add(key);
-      for (const tc2 of [0.6, 3, 15]) {
+      for (const tc2 of [0, 0.6, 3, 15]) {
         const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc2);
         if (alt) addResult(alt);
+      }
+    }
+  }
+
+  // Round 2: two-edge blocking → uncover physically distinct detours
+  const tried2 = new Set();
+  const round2Count = results.length;
+  for (let ri = 0; ri < round2Count; ri++) {
+    const edges = realEdges(results[ri].path);
+    for (let a = 0; a < edges.length; a++) {
+      for (let b = a + 1; b < edges.length; b++) {
+        const pairKey = edges[a] + '_' + edges[b];
+        if (tried2.has(pairKey)) continue;
+        tried2.add(pairKey);
+        for (const tc3 of [0, 2]) {
+          const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc3);
+          if (alt) addResult(alt);
+        }
       }
     }
   }
