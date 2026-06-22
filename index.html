@@ -837,6 +837,24 @@ function routeSig(path) {
   return segs.join('>');
 }
 
+// dedupe用: 路線ファミリー区間の列（どの系統でどの駅間を乗るか）。
+// 中央線快速と中央・総武線各停のように停車駅が違っても、
+// 同じ系統で同じ駅間を移動するなら同一shapeとみなす。
+function routeShape(path) {
+  const segs = [];
+  let curFam = lineFamily(S[path[0]][2]), startG = grp[path[0]], endG = startG;
+  for (let i = 1; i < path.length; i++) {
+    const fam = lineFamily(S[path[i]][2]), g = grp[path[i]];
+    if (fam !== curFam) {
+      segs.push(curFam + ':' + startG + '-' + endG);
+      curFam = fam; startG = g;
+    }
+    endG = g;
+  }
+  segs.push(curFam + ':' + startG + '-' + endG);
+  return segs.join('>');
+}
+
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
 const COMPANY_COST = 15; // search-only penalty for switching operators (separate fare)
@@ -1009,19 +1027,18 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  // Dedupe by physical station sequence (grp).
-  // Same physical stations (e.g. 山手線/京浜東北線並走) → keep fewer line-switches.
-  // Different stations → kept as separate candidates.
+  // Dedupe by route shape (line-family segments: どの系統でどの駅間を乗るか).
+  // 中央線快速⇔中央・総武線各停や山手線⇔京浜東北線のように、
+  // 同じ系統で同じ駅間を移動する経路は停車駅が違っても1つに統合。
+  // 統合時は距離最小→乗換最少→駅数最少（=速い方）を残す。
   const byKey = new Map();
   for (const r of results) {
-    const grpSeq = [];
-    for (const id of r.path) {
-      const g = grp[id];
-      if (grpSeq[grpSeq.length - 1] !== g) grpSeq.push(g);
-    }
-    const key = grpSeq.join(',');
+    const key = routeShape(r.path);
     const prev = byKey.get(key);
-    if (!prev || r.transfers < prev.transfers || (r.transfers === prev.transfers && r.stops < prev.stops)) {
+    if (!prev
+        || r.distance < prev.distance
+        || (r.distance === prev.distance && r.transfers < prev.transfers)
+        || (r.distance === prev.distance && r.transfers === prev.transfers && r.stops < prev.stops)) {
       byKey.set(key, r);
     }
   }
