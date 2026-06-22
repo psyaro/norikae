@@ -962,19 +962,21 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + r.cross * 12;
   }
 
-  // Dedupe: same distance + fare + transfers + operator pattern → keep fewer stops
+  // Dedupe by physical station sequence (grp).
+  // Same physical stations (e.g. 山手線/京浜東北線並走) → keep fewer line-switches.
+  // Different stations → kept as separate candidates.
   const byKey = new Map();
   for (const r of results) {
-    const ops = [];
-    let cur = operatorOf(S[r.path[0]][2]);
-    ops.push(cur);
-    for (let i = 1; i < r.path.length; i++) {
-      const op = operatorOf(S[r.path[i]][2]);
-      if (op !== cur) { ops.push(op); cur = op; }
+    const grpSeq = [];
+    for (const id of r.path) {
+      const g = grp[id];
+      if (grpSeq[grpSeq.length - 1] !== g) grpSeq.push(g);
     }
-    const key = r.distance.toFixed(1) + '|' + r.price + '|' + r.transfers + '|' + ops.join('>');
+    const key = grpSeq.join(',');
     const prev = byKey.get(key);
-    if (!prev || r.stops < prev.stops) byKey.set(key, r);
+    if (!prev || r.transfers < prev.transfers || (r.transfers === prev.transfers && r.stops < prev.stops)) {
+      byKey.set(key, r);
+    }
   }
   const deduped = [...byKey.values()];
   deduped.sort((a, b) => a.score - b.score);
