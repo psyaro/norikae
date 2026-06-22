@@ -712,8 +712,17 @@ const JR_FARE_ZONES = [
   {max:160,ticket:2750,ic:2750},{max:180,ticket:3190,ic:3190},{max:200,ticket:3520,ic:3520},
 ];
 function getJRFare(km) {
-  for (const z of JR_FARE_ZONES) { if (km <= z.max) return z; }
-  return JR_FARE_ZONES[JR_FARE_ZONES.length - 1];
+  let base;
+  for (const z of JR_FARE_ZONES) { if (km <= z.max) { base = z; break; } }
+  if (!base) base = JR_FARE_ZONES[JR_FARE_ZONES.length - 1];
+  if (km > 100) {
+    return {
+      ticket: Math.ceil(base.ticket / 2 / 10) * 10,
+      ic: Math.ceil(base.ic / 2),
+      discounted: true
+    };
+  }
+  return base;
 }
 
 // JR特定区間運賃（別表第２号イの７、東京附近）
@@ -1259,7 +1268,8 @@ function renderRoutes() {
       html += '<div class="fare-breakdown">';
       html += fi.metroFares.map(f => {
         const tag = {jr:"JR",metro:"メトロ",tx:"TX",keisei:"京成"}[f.op] || f.op;
-        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>';
+        const disc = f.fare.discounted ? ' <span style="color:#d32f2f;font-size:0.7rem">5割引</span>' : '';
+        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>' + disc;
       }).join(' ＋ ');
       html += '</div>';
     }
