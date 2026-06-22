@@ -815,16 +815,16 @@ function hPop(h) { const t=h[0];const l=h.pop();if(h.length>0){h[0]=l;let i=0;wh
 // === ROUTE FINDING (penalty-based iterative Dijkstra) ===
 function routeSig(path) {
   const segs = [];
-  let curFam = lineFamily(S[path[0]][2]), startG = grp[path[0]], endG = startG;
+  let curLine = S[path[0]][2], startG = grp[path[0]], endG = startG;
   for (let i = 1; i < path.length; i++) {
-    const fam = lineFamily(S[path[i]][2]), g = grp[path[i]];
-    if (fam !== curFam) {
-      if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
-      curFam = fam; startG = g;
+    const line = S[path[i]][2], g = grp[path[i]];
+    if (line !== curLine) {
+      if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+      curLine = line; startG = g;
     }
     endG = g;
   }
-  if (startG !== endG) segs.push(curFam + ':' + startG + '-' + endG);
+  if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
   return segs.join('>');
 }
 
