@@ -930,7 +930,12 @@ function findKRoutes(fromName, toName) {
   // Enrich with metadata
   for (const r of results) {
     const segs = getSegments(r.path);
-    r.transfers = segs.length - 1;
+    // 乗換回数: 同一駅(grp)で路線コードが変わる回数
+    let transfers = 0;
+    for (let i = 1; i < r.path.length; i++) {
+      if (S[r.path[i]][2] !== S[r.path[i-1]][2] && grp[r.path[i]] === grp[r.path[i-1]]) transfers++;
+    }
+    r.transfers = transfers;
     // 通過駅数: unique physical stations (by grp), including transfer stations
     const visited = new Set();
     for (const id of r.path) visited.add(grp[id]);
