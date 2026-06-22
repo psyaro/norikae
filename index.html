@@ -941,6 +941,34 @@ function findKRoutes(fromName, toName) {
     }
   }
 
+  // Round 3: node(grp) blocking → avoid each transfer hub for bigger physical detours
+  const srcGrps = new Set([...srcSet].map(id => grp[id]));
+  const dstGrps = new Set([...dstSet].map(id => grp[id]));
+  const triedNode = new Set();
+  const round3Count = results.length;
+  for (let ri = 0; ri < round3Count; ri++) {
+    const seenG = [];
+    for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
+    for (const g of seenG) {
+      if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
+      triedNode.add(g);
+      const pen = nodeBlockPenalty(g);
+      for (const tc of [0, 3]) {
+        const alt = dijkstraP(srcSet, dstSet, pen, tc);
+        if (alt) addResult(alt);
+      }
+    }
+  }
+
+  function nodeBlockPenalty(g) {
+    const pen = new Map();
+    for (let n = 0; n < N; n++) {
+      if (grp[n] !== g) continue;
+      for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
+    }
+    return pen;
+  }
+
   function realEdges(path) {
     const keys = [];
     for (let i = 0; i < path.length - 1; i++) {
