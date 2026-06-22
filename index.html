@@ -137,6 +137,20 @@ optgroup { font-weight: 700; }
   color: #0089c7; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
 .station-set-btn:hover, .station-set-btn:active { background: #0089c7; color: #fff; }
 .route-stops-list { font-size: 0.75rem; color: #666; line-height: 1.8; }
+
+/* Update section */
+.update-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.update-bar .version { font-size: 0.85rem; color: #666; }
+.update-btn { padding: 8px 16px; border: 1px solid #0089c7; border-radius: 8px; background: #fff;
+  color: #0089c7; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+.update-btn:hover { background: #0089c7; color: #fff; }
+.update-btn:disabled { border-color: #ccc; color: #aaa; cursor: default; background: #f8f8f8; }
+.update-status { font-size: 0.8rem; color: #888; }
+.changelog { font-size: 0.8rem; color: #555; line-height: 1.7; }
+.changelog h3 { font-size: 0.85rem; color: #333; margin: 12px 0 4px; }
+.changelog h3:first-child { margin-top: 0; }
+.changelog ul { margin: 0; padding-left: 1.2em; }
+.changelog li { margin: 2px 0; }
 </style>
 </head>
 <body>
@@ -225,6 +239,18 @@ optgroup { font-weight: 700; }
        ・JR大都市近郊区間の特例（大回り乗車）は未対応<br>
        ・一部の乗換は徒歩移動を伴います</p>
   </div>
+  <div class="card about-section">
+    <h2>アップデート</h2>
+    <div class="update-bar">
+      <span class="version" id="app-version"></span>
+      <button class="update-btn" id="update-btn" onclick="checkForUpdate()" disabled>アップデートを確認</button>
+      <span class="update-status" id="update-status"></span>
+    </div>
+  </div>
+  <div class="card about-section">
+    <h2>更新履歴</h2>
+    <div class="changelog" id="changelog"></div>
+  </div>
 </div>
 </div>
 
@@ -243,6 +269,41 @@ optgroup { font-weight: 700; }
 </div>
 </nav>
 <script>
+// === APP VERSION & CHANGELOG ===
+const APP_VERSION = 'v21';
+const CHANGELOG = [
+  { date: '2026-06-23', items: [
+    '探索の乗換コスト値を増やし経路候補を多様化',
+    '重複排除に距離・乗換回数を加味し異なる経路を保持',
+    '駅ブロッキング・2辺同時ブロッキングで候補数を大幅増加',
+    '重複排除を路線ファミリー区間(routeShape)基準に変更',
+    '初期表示で東京→新宿をデフォルト選択',
+    'アップデートボタン・更新履歴を追加',
+  ]},
+  { date: '2026-06-22', items: [
+    'JR在来線8路線追加（京葉/横須賀・総武快速/武蔵野/東海道/京浜東北/根岸/南武/横浜/埼京、計205駅）',
+    'JR在来線全12路線を同一ファミリーとして統合（改札内乗換）',
+    'JR 100km超で5割引（障害者割引）を適用',
+    '乗換回数を実際の列車乗り換え回数に修正',
+    'PWA対応（オフライン利用可）',
+    '経由路線を全表示、経由駅を常時表示',
+  ]},
+  { date: '2026-06-21', items: [
+    '京成バリアフリー料金10円を割引前運賃に加算してから半額',
+    'JR特定区間運賃を適用（別表第２号イの７）',
+    '中央線快速/中央・総武線を同一路線系統として統合',
+  ]},
+  { date: '2026-06-20', items: [
+    '京成電鉄（本線/押上線 48駅）追加',
+    'つくばエクスプレス（20駅）追加',
+    'JR4路線（山手/中央線快速/中央・総武線/常磐線 112駅）追加',
+    '都営地下鉄4路線（106駅）追加',
+    'Dijkstra法＋辺ブロック方式の経路探索',
+    '5種類のソート、おすすめ順をデフォルトに',
+    '初期リリース（東京メトロ9路線180駅）',
+  ]},
+];
+
 // === STATION DATA ===
 const LINES = {
   G: { name: "銀座線", color: "#FF9500" },
@@ -1661,15 +1722,68 @@ if (PAGES.includes(initHash)) {
   history.replaceState({ page: 'search' }, '', '#search');
 }
 
+// === VERSION & CHANGELOG RENDER ===
+document.getElementById('app-version').textContent = APP_VERSION;
+{
+  const el = document.getElementById('changelog');
+  let html = '';
+  for (const entry of CHANGELOG) {
+    html += '<h3>' + entry.date + '</h3><ul>';
+    for (const item of entry.items) html += '<li>' + item + '</li>';
+    html += '</ul>';
+  }
+  el.innerHTML = html;
+}
+
 // === SERVICE WORKER ===
+let swReg = null;
+function setUpdateStatus(msg) { document.getElementById('update-status').textContent = msg; }
+function applyWaitingSW() {
+  if (swReg && swReg.waiting) {
+    swReg.waiting.postMessage('skipWaiting');
+  }
+}
+function checkForUpdate() {
+  if (!swReg) return;
+  const btn = document.getElementById('update-btn');
+  btn.disabled = true;
+  setUpdateStatus('確認中…');
+  swReg.update().then(() => {
+    if (swReg.waiting) {
+      setUpdateStatus('新しいバージョンがあります');
+      btn.textContent = '今すぐ更新';
+      btn.disabled = false;
+      btn.onclick = () => { btn.disabled = true; setUpdateStatus('更新中…'); applyWaitingSW(); };
+    } else {
+      setUpdateStatus('最新です');
+      setTimeout(() => { btn.disabled = false; setUpdateStatus(''); }, 3000);
+    }
+  }).catch(() => {
+    setUpdateStatus('確認に失敗しました');
+    btn.disabled = false;
+  });
+}
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').then(reg => {
+    swReg = reg;
+    document.getElementById('update-btn').disabled = false;
+    if (reg.waiting) {
+      setUpdateStatus('新しいバージョンがあります');
+      const btn = document.getElementById('update-btn');
+      btn.textContent = '今すぐ更新';
+      btn.onclick = () => { btn.disabled = true; setUpdateStatus('更新中…'); applyWaitingSW(); };
+    }
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       w.addEventListener('statechange', () => {
         if (w.state === 'installed' && navigator.serviceWorker.controller) {
+          setUpdateStatus('新しいバージョンがあります');
+          const btn = document.getElementById('update-btn');
+          btn.textContent = '今すぐ更新';
+          btn.disabled = false;
+          btn.onclick = () => { btn.disabled = true; setUpdateStatus('更新中…'); applyWaitingSW(); };
           if (confirm('新しいバージョンがあります。更新しますか？')) {
-            w.postMessage('skipWaiting');
+            applyWaitingSW();
           }
         }
       });
