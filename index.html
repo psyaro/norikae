@@ -980,7 +980,7 @@ function findKRoutes(fromName, toName) {
   const results = [];
   const seenSigs = new Set();
   const t0 = performance.now();
-  const TIMEOUT_SHORT = 750, TIMEOUT_LONG = 1500, TARGET = 100;
+  const TIMEOUT_SHORT = 750, TIMEOUT_LONG = 1500, TIMEOUT_HARD = 2000, TARGET = 100;
 
   const srcGrps = new Set([...srcSet].map(id => grp[id]));
   const dstGrps = new Set([...dstSet].map(id => grp[id]));
@@ -992,7 +992,19 @@ function findKRoutes(fromName, toName) {
   const TC_FAST = [0, 1, 4, 15];
 
   function elapsed() { return performance.now() - t0; }
-  function timeout() { return dedupedCount() < 50 ? TIMEOUT_LONG : TIMEOUT_SHORT; }
+  let cachedDedup = 0, cacheAt = -1;
+  function dedupCached() {
+    const now = results.length;
+    if (now !== cacheAt) { cachedDedup = dedupedCount(); cacheAt = now; }
+    return cachedDedup;
+  }
+  function timeup() {
+    const e = elapsed();
+    if (e >= TIMEOUT_HARD) return true;
+    if (e >= TIMEOUT_SHORT && dedupCached() >= 50) return true;
+    if (e >= TIMEOUT_LONG) return true;
+    return false;
+  }
 
   function collectEdges(path) {
     for (let i = 0; i < path.length - 1; i++) {
@@ -1045,7 +1057,7 @@ function findKRoutes(fromName, toName) {
   function processRoute(ri) {
     const edges = realEdges(results[ri].path);
     for (const key of edges) {
-      if (elapsed() >= timeout()) return;
+      if (timeup()) return;
       if (triedEdge.has(key)) continue;
       triedEdge.add(key);
       for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
@@ -1053,13 +1065,13 @@ function findKRoutes(fromName, toName) {
     const seenG = [];
     for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
     for (const g of seenG) {
-      if (elapsed() >= timeout()) return;
+      if (timeup()) return;
       if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
       triedNode.add(g);
       for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
     }
-    for (let a = 0; a < edges.length && elapsed() < timeout(); a++) {
-      for (let b = a + 1; b < edges.length && elapsed() < timeout(); b++) {
+    for (let a = 0; a < edges.length && !timeup(); a++) {
+      for (let b = a + 1; b < edges.length && !timeup(); b++) {
         const pk = edges[a] + '_' + edges[b];
         if (triedPair.has(pk)) continue;
         triedPair.add(pk);
@@ -1074,11 +1086,11 @@ function findKRoutes(fromName, toName) {
   // Phase 2: iterative blocking from found routes
   let processed = 0;
   let extraEdgesDone = false, exhaustiveNodesDone = false;
-  while (elapsed() < timeout() && dedupedCount() < TARGET) {
+  while (!timeup() && dedupCached() < TARGET) {
     const batchEnd = results.length;
 
     if (batchEnd > processed) {
-      for (let ri = processed; ri < batchEnd && elapsed() < timeout(); ri++) processRoute(ri);
+      for (let ri = processed; ri < batchEnd && !timeup(); ri++) processRoute(ri);
       processed = batchEnd;
       continue;
     }
@@ -1087,7 +1099,7 @@ function findKRoutes(fromName, toName) {
     if (!extraEdgesDone) {
       extraEdgesDone = true;
       for (const key of [...allEdges]) {
-        if (elapsed() >= timeout()) break;
+        if (timeup()) break;
         if (triedEdge.has(key)) continue;
         triedEdge.add(key);
         for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
@@ -1104,7 +1116,7 @@ function findKRoutes(fromName, toName) {
         .filter(([g]) => !srcGrps.has(g) && !dstGrps.has(g) && !triedNode.has(g))
         .sort((a, b) => b[1] - a[1]);
       for (const [g] of groups) {
-        if (elapsed() >= timeout()) break;
+        if (timeup()) break;
         triedNode.add(g);
         for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
       }
