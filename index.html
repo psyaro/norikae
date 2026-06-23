@@ -975,82 +975,21 @@ function findKRoutes(fromName, toName) {
 
   const results = [];
   const seenSigs = new Set();
+  const t0 = performance.now();
+  const TIMEOUT = 750, TARGET = 100;
 
-  // Search with several transfer-cost levels:
-  // tc=0 → pure shortest distance (may zigzag)
-  // higher tc → fewer transfers preferred (allows longer detours with fewer changes)
-  const TC_LEVELS = [0, 0.3, 0.6, 1, 1.5, 2.5, 4, 7, 10, 20, 30, 50];
-  for (const tc of TC_LEVELS) {
-    const base = dijkstraP(srcSet, dstSet, new Map(), tc);
-    if (!base) continue;
-    addResult(base);
-    // Single-edge blocking to find near alternatives at this transfer-cost level
-    const edges = realEdges(base.path);
-    for (const key of edges) {
-      const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc);
-      if (alt) addResult(alt);
-    }
-  }
-
-  // Extra diversity: single-edge blocking on all found routes at multiple tc levels
-  const tried1 = new Set();
-  const round1Count = results.length;
-  for (let ri = 0; ri < round1Count; ri++) {
-    const edges = realEdges(results[ri].path);
-    for (const key of edges) {
-      if (tried1.has(key)) continue;
-      tried1.add(key);
-      for (const tc2 of [0, 0.6, 3, 15]) {
-        const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc2);
-        if (alt) addResult(alt);
-      }
-    }
-  }
-
-  // Round 2: two-edge blocking → uncover physically distinct detours
-  const tried2 = new Set();
-  const round2Count = results.length;
-  for (let ri = 0; ri < round2Count; ri++) {
-    const edges = realEdges(results[ri].path);
-    for (let a = 0; a < edges.length; a++) {
-      for (let b = a + 1; b < edges.length; b++) {
-        const pairKey = edges[a] + '_' + edges[b];
-        if (tried2.has(pairKey)) continue;
-        tried2.add(pairKey);
-        for (const tc3 of [0, 1, 2, 5, 15]) {
-          const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc3);
-          if (alt) addResult(alt);
-        }
-      }
-    }
-  }
-
-  // Round 3: node(grp) blocking → avoid each transfer hub for bigger physical detours
   const srcGrps = new Set([...srcSet].map(id => grp[id]));
   const dstGrps = new Set([...dstSet].map(id => grp[id]));
+  const triedEdge = new Set();
+  const triedPair = new Set();
   const triedNode = new Set();
-  const round3Count = results.length;
-  for (let ri = 0; ri < round3Count; ri++) {
-    const seenG = [];
-    for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
-    for (const g of seenG) {
-      if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
-      triedNode.add(g);
-      const pen = nodeBlockPenalty(g);
-      for (const tc of [0, 1, 3, 8]) {
-        const alt = dijkstraP(srcSet, dstSet, pen, tc);
-        if (alt) addResult(alt);
-      }
-    }
-  }
+  const TC_ALL = [0, 0.3, 0.6, 1, 1.5, 2.5, 4, 7, 10, 15, 20, 30, 50];
 
-  function nodeBlockPenalty(g) {
-    const pen = new Map();
-    for (let n = 0; n < N; n++) {
-      if (grp[n] !== g) continue;
-      for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
-    }
-    return pen;
+  function elapsed() { return performance.now() - t0; }
+
+  function addResult(route) {
+    const sig = routeSig(route.path);
+    if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
   }
 
   function realEdges(path) {
@@ -1062,28 +1001,102 @@ function findKRoutes(fromName, toName) {
     return keys;
   }
 
-  function addResult(route) {
-    const sig = routeSig(route.path);
-    if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
+  function nodeBlockPenalty(g) {
+    const pen = new Map();
+    for (let n = 0; n < N; n++) {
+      if (grp[n] !== g) continue;
+      for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
+    }
+    return pen;
   }
+
+  function quickTransfers(path) {
+    let t = 0;
+    for (let i = 1; i < path.length; i++) {
+      if (S[path[i]][2] !== S[path[i-1]][2] && grp[path[i]] === grp[path[i-1]]) t++;
+    }
+    return t;
+  }
+
+  function dedupedCount() {
+    const byKey = new Set();
+    for (const r of results) {
+      byKey.add(routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + quickTransfers(r.path));
+    }
+    return byKey.size;
+  }
+
+  // Phase 1: base search with all TC levels
+  for (const tc of TC_ALL) {
+    const base = dijkstraP(srcSet, dstSet, new Map(), tc);
+    if (base) addResult(base);
+  }
+
+  // Phase 2: iterative deepening — edge/node/pair blocking
+  let processed = 0;
+  while (elapsed() < TIMEOUT) {
+    const batchEnd = results.length;
+    if (batchEnd === processed) break;
+    if (dedupedCount() >= TARGET) break;
+
+    for (let ri = processed; ri < batchEnd; ri++) {
+      if (elapsed() >= TIMEOUT) break;
+      const r = results[ri];
+      const edges = realEdges(r.path);
+
+      // Single-edge blocking
+      for (const key of edges) {
+        if (elapsed() >= TIMEOUT) break;
+        if (triedEdge.has(key)) continue;
+        triedEdge.add(key);
+        for (const tc of TC_ALL) {
+          const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc);
+          if (alt) addResult(alt);
+        }
+      }
+
+      // Node(grp) blocking
+      if (elapsed() >= TIMEOUT) break;
+      const seenG = [];
+      for (const id of r.path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
+      for (const g of seenG) {
+        if (elapsed() >= TIMEOUT) break;
+        if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
+        triedNode.add(g);
+        const pen = nodeBlockPenalty(g);
+        for (const tc of TC_ALL) {
+          const alt = dijkstraP(srcSet, dstSet, pen, tc);
+          if (alt) addResult(alt);
+        }
+      }
+
+      // Two-edge blocking
+      for (let a = 0; a < edges.length && elapsed() < TIMEOUT; a++) {
+        for (let b = a + 1; b < edges.length && elapsed() < TIMEOUT; b++) {
+          const pairKey = edges[a] + '_' + edges[b];
+          if (triedPair.has(pairKey)) continue;
+          triedPair.add(pairKey);
+          for (const tc of [0, 1, 3, 8, 20]) {
+            const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc);
+            if (alt) addResult(alt);
+          }
+        }
+      }
+    }
+    processed = batchEnd;
+  }
+
+  const searchMs = Math.round(elapsed());
 
   // Enrich with metadata
   for (const r of results) {
-    const segs = getSegments(r.path);
-    // 乗換回数: 同一駅(grp)で路線コードが変わる回数
-    let transfers = 0;
-    for (let i = 1; i < r.path.length; i++) {
-      if (S[r.path[i]][2] !== S[r.path[i-1]][2] && grp[r.path[i]] === grp[r.path[i-1]]) transfers++;
-    }
-    r.transfers = transfers;
-    // 通過駅数: unique physical stations (by grp), including transfer stations
+    r.transfers = quickTransfers(r.path);
     const visited = new Set();
     for (const id of r.path) visited.add(grp[id]);
     r.stops = visited.size;
     const fi = calcRouteFare(r.path);
     r.fareInfo = fi;
-    r.price = fi.totalTicket; // Metro + JR fare (Toei = free)
-    // 会社またぎ: 有料会社またぎ(paidCross)と都営またぎ(toeiCross)を分離
+    r.price = fi.totalTicket;
     let paidCross = 0, toeiCross = 0;
     for (let i = 1; i < r.path.length; i++) {
       const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
@@ -1096,10 +1109,7 @@ function findKRoutes(fromName, toName) {
     r.score = r.distance + r.transfers * 2 + paidCross * 12 + toeiCross * 0.5;
   }
 
-  // Dedupe: shape(系統区間) + 距離 + 乗換回数 をキーに、各グループで駅数最小を残す。
-  // - 距離が違えば別候補（統合しない）
-  // - 同じ距離でも乗換回数が違えば別候補（乗換違いを見せる）
-  // - 同一(shape,距離,乗換)内は駅数最小（=速い方、中央快速⇔各停など）を採用
+  // Dedupe
   const byKey = new Map();
   for (const r of results) {
     const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
@@ -1108,7 +1118,6 @@ function findKRoutes(fromName, toName) {
   }
   let deduped = [...byKey.values()];
 
-  // 各(shape,距離)グループで、乗換回数は最少〜最少+1回までに制限。
   const minTrans = new Map();
   for (const r of deduped) {
     const sk = routeShape(r.path) + '|' + r.distance.toFixed(1);
@@ -1120,6 +1129,8 @@ function findKRoutes(fromName, toName) {
   });
 
   deduped.sort((a, b) => a.score - b.score);
+  deduped.searchMs = searchMs;
+  deduped.rawCount = results.length;
   return deduped;
 }
 
@@ -1372,7 +1383,8 @@ function sortRoutes(key) {
 function renderRoutes() {
   const resultEl = document.getElementById("result");
   const summaryEl = document.getElementById("result-summary");
-  summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>';
+  const ms = lastRoutes.searchMs != null ? ' (' + lastRoutes.searchMs + 'ms / 探索' + lastRoutes.rawCount + '件)' : '';
+  summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>' + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
   const sorted = [...lastRoutes];
   const cmp = {
     recommend:(a,b) => a.score - b.score,
