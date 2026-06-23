@@ -75,6 +75,10 @@ details summary:hover { text-decoration: underline; }
 .far-note { font-size: 0.7rem; color: #d32f2f; margin-top: 2px; }
 .route-warn { font-size: 0.7rem; color: #c77; margin-top: 4px; }
 .error { color: #d32f2f; text-align: center; padding: 12px; font-size: 0.9rem; }
+.loading { text-align: center; padding: 40px 12px; color: #888; font-size: 0.95rem; }
+.loading-spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #e0e0e0;
+  border-top-color: #0089c7; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .fare-breakdown { font-size: 0.8rem; color: #666; margin-top: 2px; }
 .fare-breakdown b { color: #333; }
 .line-sep { border-top: 1px dashed #ddd; margin: 4px 0; }
@@ -976,7 +980,7 @@ function findKRoutes(fromName, toName) {
   const results = [];
   const seenSigs = new Set();
   const t0 = performance.now();
-  const TIMEOUT = 750, TARGET = 100;
+  const TIMEOUT_SHORT = 750, TIMEOUT_LONG = 1500, TARGET = 100;
 
   const srcGrps = new Set([...srcSet].map(id => grp[id]));
   const dstGrps = new Set([...dstSet].map(id => grp[id]));
@@ -988,7 +992,7 @@ function findKRoutes(fromName, toName) {
   const TC_FAST = [0, 1, 4, 15];
 
   function elapsed() { return performance.now() - t0; }
-  function done() { return elapsed() >= TIMEOUT || dedupedCount() >= TARGET; }
+  function timeout() { return dedupedCount() < 50 ? TIMEOUT_LONG : TIMEOUT_SHORT; }
 
   function collectEdges(path) {
     for (let i = 0; i < path.length - 1; i++) {
@@ -1041,7 +1045,7 @@ function findKRoutes(fromName, toName) {
   function processRoute(ri) {
     const edges = realEdges(results[ri].path);
     for (const key of edges) {
-      if (elapsed() >= TIMEOUT) return;
+      if (elapsed() >= timeout()) return;
       if (triedEdge.has(key)) continue;
       triedEdge.add(key);
       for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
@@ -1049,13 +1053,13 @@ function findKRoutes(fromName, toName) {
     const seenG = [];
     for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
     for (const g of seenG) {
-      if (elapsed() >= TIMEOUT) return;
+      if (elapsed() >= timeout()) return;
       if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
       triedNode.add(g);
       for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
     }
-    for (let a = 0; a < edges.length && elapsed() < TIMEOUT; a++) {
-      for (let b = a + 1; b < edges.length && elapsed() < TIMEOUT; b++) {
+    for (let a = 0; a < edges.length && elapsed() < timeout(); a++) {
+      for (let b = a + 1; b < edges.length && elapsed() < timeout(); b++) {
         const pk = edges[a] + '_' + edges[b];
         if (triedPair.has(pk)) continue;
         triedPair.add(pk);
@@ -1070,11 +1074,11 @@ function findKRoutes(fromName, toName) {
   // Phase 2: iterative blocking from found routes
   let processed = 0;
   let extraEdgesDone = false, exhaustiveNodesDone = false;
-  while (elapsed() < TIMEOUT && dedupedCount() < TARGET) {
+  while (elapsed() < timeout() && dedupedCount() < TARGET) {
     const batchEnd = results.length;
 
     if (batchEnd > processed) {
-      for (let ri = processed; ri < batchEnd && elapsed() < TIMEOUT; ri++) processRoute(ri);
+      for (let ri = processed; ri < batchEnd && elapsed() < timeout(); ri++) processRoute(ri);
       processed = batchEnd;
       continue;
     }
@@ -1083,7 +1087,7 @@ function findKRoutes(fromName, toName) {
     if (!extraEdgesDone) {
       extraEdgesDone = true;
       for (const key of [...allEdges]) {
-        if (elapsed() >= TIMEOUT) break;
+        if (elapsed() >= timeout()) break;
         if (triedEdge.has(key)) continue;
         triedEdge.add(key);
         for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
@@ -1100,7 +1104,7 @@ function findKRoutes(fromName, toName) {
         .filter(([g]) => !srcGrps.has(g) && !dstGrps.has(g) && !triedNode.has(g))
         .sort((a, b) => b[1] - a[1]);
       for (const [g] of groups) {
-        if (elapsed() >= TIMEOUT) break;
+        if (elapsed() >= timeout()) break;
         triedNode.add(g);
         for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
       }
@@ -1384,14 +1388,18 @@ function calculate() {
   if (!nameToIds[fromName]) { showError('「' + escHtml(fromName) + '」という駅が見つかりません'); return; }
   if (!nameToIds[toName]) { showError('「' + escHtml(toName) + '」という駅が見つかりません'); return; }
 
-  lastRoutes = findKRoutes(fromName, toName);
-  if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
-
-  lastFromName = fromName;
-  lastToName = toName;
-  currentSort = 'recommend';
-  renderRoutes();
+  resultEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div><br>経路を探索中…</div>';
+  summaryEl.innerHTML = '<b>' + escHtml(fromName) + '</b> → <b>' + escHtml(toName) + '</b>';
   navigate('results');
+
+  setTimeout(() => {
+    lastRoutes = findKRoutes(fromName, toName);
+    if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
+    lastFromName = fromName;
+    lastToName = toName;
+    currentSort = 'recommend';
+    renderRoutes();
+  }, 20);
 }
 
 let lastRoutes = [];
