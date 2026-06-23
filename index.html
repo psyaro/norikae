@@ -919,7 +919,7 @@ function routeShape(path) {
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
 const COMPANY_COST = 15; // search penalty for switching to a paid operator
-const TOEI_CROSS_COST = 2; // lower penalty for switches involving Toei (free fare)
+const TOEI_CROSS_COST = 0.3; // minimal penalty for switches involving Toei (free fare)
 const INTRA_FAMILY_COST = 0.3; // small penalty for switching lines within same family (e.g. JY↔JK)
 function companyCost(opA, opB) {
   if (opA === opB) return 0;
@@ -1093,7 +1093,7 @@ function findKRoutes(fromName, toName) {
       }
     }
     r.cross = paidCross + toeiCross;
-    r.score = r.distance + r.transfers * 2 + paidCross * 12 + toeiCross * 2;
+    r.score = r.distance + r.transfers * 2 + paidCross * 12 + toeiCross * 0.5;
   }
 
   // Dedupe: shape(系統区間) + 距離 + 乗換回数 をキーに、各グループで駅数最小を残す。
