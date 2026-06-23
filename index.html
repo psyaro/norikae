@@ -1746,17 +1746,6 @@ function buildRouteHtml(path) {
       }
     }
 
-    if (si < famSegments.length - 1) {
-      const lastSub = mySubs[mySubs.length - 1];
-      const cc = LINES[lastSub.line].color;
-      const nextFam = famSegments[si+1];
-      const nextFirstLine = S[nextFam.stations[0]][2];
-      const nc = LINES[nextFirstLine].color;
-      html += '<div class="route-segment">';
-      html += '<div class="route-segment-bar" style="background:linear-gradient(' + cc + ',' + nc + ')"></div>';
-      html += '<div class="route-segment-info" style="color:#e67e00">⇅ 乗換</div>';
-      html += '</div>';
-    }
   }
   return html;
 }
