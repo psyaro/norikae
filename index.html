@@ -1411,6 +1411,7 @@ function calculate() {
     lastFromName = fromName;
     lastToName = toName;
     currentSort = 'recommend';
+    displayCount = 30;
     renderRoutes();
   }, 20);
 }
@@ -1419,9 +1420,23 @@ let lastRoutes = [];
 let lastFromName = '';
 let lastToName = '';
 let currentSort = 'recommend';
+let displayedSorted = [];
+let displayCount = 30;
 
 function sortRoutes(key) {
   currentSort = key;
+  renderRoutes();
+}
+
+function lazyRouteDetail(el, idx) {
+  if (!el.open) return;
+  const div = el.querySelector('.route-detail');
+  if (div.hasChildNodes()) return;
+  div.innerHTML = buildRouteHtml(displayedSorted[idx].path);
+}
+
+function showMoreRoutes() {
+  displayCount = displayedSorted.length;
   renderRoutes();
 }
 
@@ -1430,7 +1445,7 @@ function renderRoutes() {
   const summaryEl = document.getElementById("result-summary");
   const ms = lastRoutes.searchMs != null ? ' (' + lastRoutes.searchMs + 'ms / 探索' + lastRoutes.rawCount + '件)' : '';
   summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>' + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
-  const sorted = [...lastRoutes];
+  displayedSorted = [...lastRoutes];
   const cmp = {
     recommend:(a,b) => a.score - b.score,
     price:    (a,b) => a.price - b.price || a.distance - b.distance,
@@ -1438,7 +1453,8 @@ function renderRoutes() {
     transfers:(a,b) => a.transfers - b.transfers || a.distance - b.distance,
     stops:    (a,b) => a.stops - b.stops || a.distance - b.distance,
   };
-  sorted.sort(cmp[currentSort] || cmp.recommend);
+  displayedSorted.sort(cmp[currentSort] || cmp.recommend);
+  const showCount = Math.min(displayCount, displayedSorted.length);
 
   let html = '<div class="sort-bar">';
   html += '<span class="sort-label">並べ替え:</span>';
@@ -1446,11 +1462,11 @@ function renderRoutes() {
   for (const [k,label] of btns) {
     html += '<button class="sort-btn' + (currentSort===k?' active':'') + '" onclick="sortRoutes(\'' + k + '\')">' + label + '</button>';
   }
-  html += '<span class="sort-count">' + sorted.length + '件</span>';
+  html += '<span class="sort-count">' + displayedSorted.length + '件</span>';
   html += '</div>';
 
-  for (let ri = 0; ri < sorted.length; ri++) {
-    const r = sorted[ri];
+  for (let ri = 0; ri < showCount; ri++) {
+    const r = displayedSorted[ri];
     const segments = getSegments(r.path);
     const fi = r.fareInfo;
 
@@ -1470,7 +1486,6 @@ function renderRoutes() {
     html += '<span class="route-stops">' + r.stops + '駅</span>';
     html += '</div>';
 
-    // Fare breakdown when multiple paid segments or mixed with free (都営) sections
     if (fi.metroFares.length > 1 || (fi.metroFares.length === 1 && !fi.allMetro)) {
       html += '<div class="fare-breakdown">';
       html += fi.metroFares.map(f => {
@@ -1494,7 +1509,6 @@ function renderRoutes() {
     }
     html += '</div>';
 
-    // Warnings
     if (fi.crossCompany) {
       html += '<div class="route-warn">⚠ 他社線乗り換えあり（連絡運輸・乗継割引が別途設定されている場合があります）</div>';
     }
@@ -1502,9 +1516,13 @@ function renderRoutes() {
       html += '<div class="route-warn">⚠ JR線は大都市近郊区間の特例（大回り乗車）の対象となる場合があります</div>';
     }
 
-    html += '<details><summary>詳細</summary>';
-    html += buildRouteHtml(r.path);
+    html += '<details ontoggle="lazyRouteDetail(this,' + ri + ')"><summary>詳細</summary>';
+    html += '<div class="route-detail"></div>';
     html += '</details></div>';
+  }
+
+  if (showCount < displayedSorted.length) {
+    html += '<button class="calc-btn" style="margin-top:8px" onclick="showMoreRoutes()">残り' + (displayedSorted.length - showCount) + '件を表示</button>';
   }
 
   resultEl.innerHTML = html;
