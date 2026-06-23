@@ -1691,25 +1691,36 @@ function buildRouteHtml(path) {
       const first = uniq[0];
       const last = uniq[uniq.length - 1];
 
-      const skipThis = (mi === 0 && skipStart) || (mi > 0 && grp[first] === grp[mySubs[mi-1].stations[mySubs[mi-1].stations.length-1]]);
+      const skipThis = (mi > 0 && grp[first] === grp[mySubs[mi-1].stations[mySubs[mi-1].stations.length-1]]);
+      const isTransferStart = mi === 0 && skipStart;
 
       if (!skipThis) {
         html += '<div class="route-station">';
         html += '<div class="route-dot" style="border-color:' + c + '"></div>';
         html += '<div class="route-name">' + escHtml(S[first][1]);
-        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
-        if (si > 0 && mi === 0 && !skipStart) {
-          html += '<span class="route-transfer">乗換</span>';
+        if (isTransferStart) {
           const prevSeg = famSegments[si-1];
+          const prevLastLine = S[prevSeg.stations[prevSeg.stations.length-1]][2];
+          const pc = LINES[prevLastLine].color;
+          html += '<span class="line-badge" style="background:' + pc + '">' + LINES[prevLastLine].name + '</span>';
+          html += '<span class="route-arrow" style="font-size:0.7rem;vertical-align:middle">→</span>';
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+          html += '<span class="route-transfer">乗換</span>';
           const prevLast = prevSeg.stations[prevSeg.stations.length-1];
           const farNote = getFarNote(prevLast, first);
           if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
+        } else {
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
         }
         html += '</div></div>';
       }
 
       if (uniq.length > 1) {
-        const midStations = uniq.slice(1, -1).map(id => escHtml(S[id][1]));
+        // Check if last station will be shown as transfer start of next segment
+        const isLastTransfer = si < famSegments.length - 1 && mi === mySubs.length - 1
+          && grp[last] === grp[famSegments[si+1].stations[0]];
+        const midEnd = isLastTransfer ? uniq.length - 1 : uniq.length - 1;
+        const midStations = uniq.slice(1, midEnd).map(id => escHtml(S[id][1]));
         html += '<div class="route-segment">';
         html += '<div class="route-segment-bar" style="background:' + c + '"></div>';
         html += '<div class="route-segment-info">';
@@ -1718,11 +1729,13 @@ function buildRouteHtml(path) {
         }
         html += '</div></div>';
 
-        html += '<div class="route-station">';
-        html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-        html += '<div class="route-name">' + escHtml(S[last][1]);
-        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
-        html += '</div></div>';
+        if (!isLastTransfer) {
+          html += '<div class="route-station">';
+          html += '<div class="route-dot" style="border-color:' + c + '"></div>';
+          html += '<div class="route-name">' + escHtml(S[last][1]);
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+          html += '</div></div>';
+        }
       }
     }
 
