@@ -1017,6 +1017,12 @@ function findKRoutes(fromName, toName) {
 
   function tryAdd(route) {
     if (!route) return;
+    // Remove intermediate nodes within same-grp chains (e.g. A(C)→B(I)→C(M) at 大手町 → A(C)→C(M))
+    const p = route.path;
+    for (let i = 1; i < p.length - 1; ) {
+      if (grp[p[i-1]] === grp[p[i]] && grp[p[i]] === grp[p[i+1]]) p.splice(i, 1);
+      else i++;
+    }
     collectEdges(route.path);
     const sig = routeSig(route.path);
     if (!sigIndex.has(sig)) {
