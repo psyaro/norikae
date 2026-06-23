@@ -1,7 +1,9 @@
-const CACHE_NAME = 'norikae-v21';
+importScripts('version.js');
+const CACHE_NAME = 'norikae-' + APP_VERSION;
 const ASSETS = [
   './',
   './index.html',
+  './version.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

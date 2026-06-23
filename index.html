@@ -272,9 +272,9 @@ optgroup { font-weight: 700; }
   </a>
 </div>
 </nav>
+<script src="version.js"></script>
 <script>
-// === APP VERSION & CHANGELOG ===
-const APP_VERSION = 'v21';
+// === CHANGELOG ===
 const CHANGELOG = [
   { date: '2026-06-23', items: [
     '探索の乗換コスト値を増やし経路候補を多様化',
@@ -283,6 +283,7 @@ const CHANGELOG = [
     '重複排除を路線ファミリー区間(routeShape)基準に変更',
     '初期表示で東京→新宿をデフォルト選択',
     'アップデートボタン・更新履歴を追加',
+    'バージョンをversion.jsに一元管理（sw.js自動連動）',
   ]},
   { date: '2026-06-22', items: [
     'JR在来線8路線追加（京葉/横須賀・総武快速/武蔵野/東海道/京浜東北/根岸/南武/横浜/埼京、計205駅）',
@@ -1828,7 +1829,7 @@ function checkForUpdate() {
   });
 }
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
     swReg = reg;
     document.getElementById('update-btn').disabled = false;
     if (reg.waiting) {
