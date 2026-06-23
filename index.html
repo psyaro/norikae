@@ -730,7 +730,7 @@ const CROSS_TRANSFERS = [
   [249,36],[249,227],   // 新宿西口(E) ↔ 新宿(M,S)
   [257,4],[257,52],     // 上野御徒町(E) ↔ 上野広小路(G),仲御徒町(H)
   [194,235],            // 東日本橋(A) ↔ 馬喰横山(S)
-  [233,25],             // 小川町(S) ↔ 淡路町(M)
+  [233,25],[233,100],   // 小川町(S) ↔ 淡路町(M),新御茶ノ水(C)
   [234,53],             // 岩本町(S) ↔ 秋葉原(H)
   [207,129],            // 日比谷(I) ↔ 有楽町(Y) ※Wikipedia三田線
   [193,145],            // 人形町(A) ↔ 水天宮前(Z) ※Wikipedia浅草線
@@ -923,6 +923,21 @@ function routeShape(path) {
 
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
+
+// 素通り乗換の検出: 乗換ハブで実乗車せず0距離乗換を2連続で跨ぐ経路を弾く。
+// 例: 小川町(S)→[乗らず]新御茶ノ水(C)→[乗らず]御茶ノ水(JR) は実質「小川町→御茶ノ水JRを徒歩」で遠い。
+// 異なる3系統を0距離だけで跨ぐ駅は素通りハブとみなす。
+function hasPassthroughTransfer(path) {
+  for (let i = 1; i < path.length - 1; i++) {
+    const prevTransfer = grp[path[i-1]] === grp[path[i]];
+    const nextTransfer = grp[path[i]] === grp[path[i+1]];
+    if (prevTransfer && nextTransfer) {
+      const fPrev = lineFamily(S[path[i-1]][2]), fCur = lineFamily(S[path[i]][2]), fNext = lineFamily(S[path[i+1]][2]);
+      if (fPrev !== fCur && fCur !== fNext) return true;
+    }
+  }
+  return false;
+}
 const COMPANY_COST = 2; // small search penalty for switching to a paid operator
 const TOEI_CROSS_COST = 0.1; // near-zero penalty for switches involving Toei (free fare)
 const INTRA_FAMILY_COST = 0.1; // near-zero penalty for switching lines within same family
@@ -1212,8 +1227,11 @@ function findKRoutes(fromName, toName) {
 
   const searchMs = Math.round(elapsed());
 
+  // Filter out passthrough-transfer routes (素通り乗換: 乗換ハブを徒歩で素通り)
+  const filtered = results.filter(r => !hasPassthroughTransfer(r.path));
+
   // Enrich with metadata
-  for (const r of results) {
+  for (const r of filtered) {
     r.transfers = quickTransfers(r.path);
     const visited = new Set();
     for (const id of r.path) visited.add(grp[id]);
@@ -1235,7 +1253,7 @@ function findKRoutes(fromName, toName) {
 
   // Dedupe
   const byKey = new Map();
-  for (const r of results) {
+  for (const r of filtered) {
     const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
     const prev = byKey.get(key);
     if (!prev || r.stops < prev.stops) byKey.set(key, r);
@@ -1264,7 +1282,7 @@ const CROSS_NAME_MAP = {
   "虎ノ門": ["虎ノ門ヒルズ"], "虎ノ門ヒルズ": ["虎ノ門"],
   "溜池山王": ["国会議事堂前"], "国会議事堂前": ["溜池山王"],
   "赤坂見附": ["永田町"], "永田町": ["赤坂見附"],
-  "淡路町": ["新御茶ノ水","小川町"], "新御茶ノ水": ["御茶ノ水","淡路町"], "小川町": ["淡路町"],
+  "淡路町": ["新御茶ノ水","小川町"], "新御茶ノ水": ["御茶ノ水","淡路町","小川町"], "小川町": ["淡路町","新御茶ノ水"],
   "銀座": ["銀座一丁目"], "銀座一丁目": ["銀座"],
   "人形町": ["水天宮前"], "水天宮前": ["人形町"],
   "築地": ["新富町"], "新富町": ["築地"],
