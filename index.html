@@ -931,8 +931,9 @@ function companyCost(opA, opB) {
   if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
   return COMPANY_COST;
 }
-function dijkstraP(srcSet, dstSet, penalty, transferCost) {
+function dijkstraP(srcSet, dstSet, penalty, transferCost, ccMul) {
   transferCost = transferCost || 0;
+  if (ccMul === undefined) ccMul = 1;
   const dist = new Float64Array(N).fill(Infinity);
   const real = new Float64Array(N).fill(Infinity);
   const prev = new Int32Array(N).fill(-1);
@@ -947,7 +948,7 @@ function dijkstraP(srcSet, dstSet, penalty, transferCost) {
       if (w === 0) {
         if (lineFamily(S[u][2]) !== lineFamily(S[v][2])) {
           tc = transferCost;
-          tc += companyCost(operatorOf(S[u][2]), operatorOf(S[v][2]));
+          tc += companyCost(operatorOf(S[u][2]), operatorOf(S[v][2])) * ccMul;
         } else if (S[u][2] !== S[v][2]) {
           tc = INTRA_FAMILY_COST;
         }
@@ -1055,13 +1056,20 @@ function findKRoutes(fromName, toName) {
     return byKey.size;
   }
 
+  function runWithCosts(pen, tcs) {
+    for (const tc of tcs) {
+      tryAdd(dijkstraP(srcSet, dstSet, pen, tc));
+      tryAdd(dijkstraP(srcSet, dstSet, pen, tc, 0));
+    }
+  }
+
   function processRoute(ri) {
     const edges = realEdges(results[ri].path);
     for (const key of edges) {
       if (timeup()) return;
       if (triedEdge.has(key)) continue;
       triedEdge.add(key);
-      for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
+      runWithCosts(new Map([[key, 999]]), TC_ALL);
     }
     const seenG = [];
     for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
@@ -1069,24 +1077,47 @@ function findKRoutes(fromName, toName) {
       if (timeup()) return;
       if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
       triedNode.add(g);
-      for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
+      runWithCosts(nodeBlockPenalty(g), TC_ALL);
     }
     for (let a = 0; a < edges.length && !timeup(); a++) {
       for (let b = a + 1; b < edges.length && !timeup(); b++) {
         const pk = edges[a] + '_' + edges[b];
         if (triedPair.has(pk)) continue;
         triedPair.add(pk);
-        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc));
+        runWithCosts(new Map([[edges[a], 999], [edges[b], 999]]), TC_FAST);
       }
     }
   }
 
-  // Phase 1: base search
+  // Phase 1a: base search (normal company cost + zero company cost)
   for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc));
+  for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc, 0));
+
+  // Phase 1b: via-point search — force routes through each cross-company transfer
+  for (const [u, v] of CROSS_TRANSFERS) {
+    if (timeup()) break;
+    const opU = operatorOf(S[u][2]), opV = operatorOf(S[v][2]);
+    if (opU === opV) continue;
+    for (const [mid, next] of [[u, v], [v, u]]) {
+      // High tc to prefer same-line arrival/departure (no detour via other lines)
+      const leg1 = dijkstraP(srcSet, new Set([mid]), new Map(), 50, 0);
+      if (!leg1) continue;
+      const leg2 = dijkstraP(new Set([next]), dstSet, new Map(), 50, 0);
+      if (!leg2) continue;
+      // Ensure mid/next are included despite path trimming
+      const p1 = leg1.path, p2 = leg2.path;
+      const path = [...p1];
+      if (path[path.length - 1] !== mid) path.push(mid);
+      if (p2[0] === next) { for (const id of p2) path.push(id); }
+      else { path.push(next); for (const id of p2) path.push(id); }
+      const dist = Math.round((leg1.distance + leg2.distance) * 10) / 10;
+      tryAdd({ distance: dist, path });
+    }
+  }
 
   // Phase 2: iterative blocking from found routes
   let processed = 0;
-  let extraEdgesDone = false, exhaustiveNodesDone = false;
+  let extraEdgesDone = false, exhaustiveNodesDone = false, corridorsDone = false;
   while (!timeup() && dedupCached() < TARGET) {
     const batchEnd = results.length;
 
@@ -1103,7 +1134,7 @@ function findKRoutes(fromName, toName) {
         if (timeup()) break;
         if (triedEdge.has(key)) continue;
         triedEdge.add(key);
-        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
+        runWithCosts(new Map([[key, 999]]), TC_FAST);
       }
       continue;
     }
@@ -1119,7 +1150,25 @@ function findKRoutes(fromName, toName) {
       for (const [g] of groups) {
         if (timeup()) break;
         triedNode.add(g);
-        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
+        runWithCosts(nodeBlockPenalty(g), TC_FAST);
+      }
+      continue;
+    }
+
+    // Phase 5: block entire route corridors — all intermediate nodes of each found route
+    if (!corridorsDone) {
+      corridorsDone = true;
+      for (let ri = 0; ri < results.length && !timeup(); ri++) {
+        const pen = new Map();
+        for (const id of results[ri].path) {
+          const g = grp[id];
+          if (srcGrps.has(g) || dstGrps.has(g)) continue;
+          for (let n = 0; n < N; n++) {
+            if (grp[n] !== g) continue;
+            for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
+          }
+        }
+        if (pen.size > 0) runWithCosts(pen, TC_FAST);
       }
       continue;
     }
