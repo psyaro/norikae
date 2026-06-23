@@ -923,9 +923,9 @@ function routeShape(path) {
 
 // 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
 function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
-const COMPANY_COST = 15; // search penalty for switching to a paid operator
-const TOEI_CROSS_COST = 0.3; // minimal penalty for switches involving Toei (free fare)
-const INTRA_FAMILY_COST = 0.3; // small penalty for switching lines within same family (e.g. JY↔JK)
+const COMPANY_COST = 2; // small search penalty for switching to a paid operator
+const TOEI_CROSS_COST = 0.1; // near-zero penalty for switches involving Toei (free fare)
+const INTRA_FAMILY_COST = 0.1; // near-zero penalty for switching lines within same family
 function companyCost(opA, opB) {
   if (opA === opB) return 0;
   if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
@@ -1196,7 +1196,7 @@ function findKRoutes(fromName, toName) {
       }
     }
     r.cross = paidCross + toeiCross;
-    r.score = r.distance + r.transfers * 2 + paidCross * 12 + toeiCross * 0.5;
+    r.score = r.distance + r.transfers * 1.5 + paidCross * 3 + toeiCross * 0.3;
   }
 
   // Dedupe
