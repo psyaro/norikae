@@ -983,11 +983,23 @@ function findKRoutes(fromName, toName) {
   const triedEdge = new Set();
   const triedPair = new Set();
   const triedNode = new Set();
+  const allEdges = new Set();
   const TC_ALL = [0, 0.3, 0.6, 1, 1.5, 2.5, 4, 7, 10, 15, 20, 30, 50];
+  const TC_FAST = [0, 1, 4, 15];
 
   function elapsed() { return performance.now() - t0; }
+  function done() { return elapsed() >= TIMEOUT || dedupedCount() >= TARGET; }
 
-  function addResult(route) {
+  function collectEdges(path) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const u = path[i], v = path[i+1];
+      if (grp[u] !== grp[v]) allEdges.add(Math.min(u,v)*1000+Math.max(u,v));
+    }
+  }
+
+  function tryAdd(route) {
+    if (!route) return;
+    collectEdges(route.path);
     const sig = routeSig(route.path);
     if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
   }
@@ -1026,64 +1038,76 @@ function findKRoutes(fromName, toName) {
     return byKey.size;
   }
 
-  // Phase 1: base search with all TC levels
-  for (const tc of TC_ALL) {
-    const base = dijkstraP(srcSet, dstSet, new Map(), tc);
-    if (base) addResult(base);
+  function processRoute(ri) {
+    const edges = realEdges(results[ri].path);
+    for (const key of edges) {
+      if (elapsed() >= TIMEOUT) return;
+      if (triedEdge.has(key)) continue;
+      triedEdge.add(key);
+      for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
+    }
+    const seenG = [];
+    for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
+    for (const g of seenG) {
+      if (elapsed() >= TIMEOUT) return;
+      if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
+      triedNode.add(g);
+      for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
+    }
+    for (let a = 0; a < edges.length && elapsed() < TIMEOUT; a++) {
+      for (let b = a + 1; b < edges.length && elapsed() < TIMEOUT; b++) {
+        const pk = edges[a] + '_' + edges[b];
+        if (triedPair.has(pk)) continue;
+        triedPair.add(pk);
+        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc));
+      }
+    }
   }
 
-  // Phase 2: iterative deepening — edge/node/pair blocking
+  // Phase 1: base search
+  for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc));
+
+  // Phase 2: iterative blocking from found routes
   let processed = 0;
-  while (elapsed() < TIMEOUT) {
+  let extraEdgesDone = false, exhaustiveNodesDone = false;
+  while (elapsed() < TIMEOUT && dedupedCount() < TARGET) {
     const batchEnd = results.length;
-    if (batchEnd === processed) break;
-    if (dedupedCount() >= TARGET) break;
 
-    for (let ri = processed; ri < batchEnd; ri++) {
-      if (elapsed() >= TIMEOUT) break;
-      const r = results[ri];
-      const edges = realEdges(r.path);
+    if (batchEnd > processed) {
+      for (let ri = processed; ri < batchEnd && elapsed() < TIMEOUT; ri++) processRoute(ri);
+      processed = batchEnd;
+      continue;
+    }
 
-      // Single-edge blocking
-      for (const key of edges) {
+    // Phase 3: edges from sig-duplicate routes (not yet in triedEdge)
+    if (!extraEdgesDone) {
+      extraEdgesDone = true;
+      for (const key of [...allEdges]) {
         if (elapsed() >= TIMEOUT) break;
         if (triedEdge.has(key)) continue;
         triedEdge.add(key);
-        for (const tc of TC_ALL) {
-          const alt = dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc);
-          if (alt) addResult(alt);
-        }
+        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, new Map([[key, 999]]), tc));
       }
-
-      // Node(grp) blocking
-      if (elapsed() >= TIMEOUT) break;
-      const seenG = [];
-      for (const id of r.path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
-      for (const g of seenG) {
-        if (elapsed() >= TIMEOUT) break;
-        if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
-        triedNode.add(g);
-        const pen = nodeBlockPenalty(g);
-        for (const tc of TC_ALL) {
-          const alt = dijkstraP(srcSet, dstSet, pen, tc);
-          if (alt) addResult(alt);
-        }
-      }
-
-      // Two-edge blocking
-      for (let a = 0; a < edges.length && elapsed() < TIMEOUT; a++) {
-        for (let b = a + 1; b < edges.length && elapsed() < TIMEOUT; b++) {
-          const pairKey = edges[a] + '_' + edges[b];
-          if (triedPair.has(pairKey)) continue;
-          triedPair.add(pairKey);
-          for (const tc of [0, 1, 3, 8, 20]) {
-            const alt = dijkstraP(srcSet, dstSet, new Map([[edges[a], 999], [edges[b], 999]]), tc);
-            if (alt) addResult(alt);
-          }
-        }
-      }
+      continue;
     }
-    processed = batchEnd;
+
+    // Phase 4: exhaustive node blocking — all station groups, hubs first
+    if (!exhaustiveNodesDone) {
+      exhaustiveNodesDone = true;
+      const groupConn = new Map();
+      for (let n = 0; n < N; n++) groupConn.set(grp[n], (groupConn.get(grp[n]) || 0) + adj[n].length);
+      const groups = [...groupConn.entries()]
+        .filter(([g]) => !srcGrps.has(g) && !dstGrps.has(g) && !triedNode.has(g))
+        .sort((a, b) => b[1] - a[1]);
+      for (const [g] of groups) {
+        if (elapsed() >= TIMEOUT) break;
+        triedNode.add(g);
+        for (const tc of TC_FAST) tryAdd(dijkstraP(srcSet, dstSet, nodeBlockPenalty(g), tc));
+      }
+      continue;
+    }
+
+    break;
   }
 
   const searchMs = Math.round(elapsed());
