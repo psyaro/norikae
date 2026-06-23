@@ -980,7 +980,7 @@ function findKRoutes(fromName, toName) {
   addCrossTransferIds(toName, dstSet);
 
   const results = [];
-  const seenSigs = new Set();
+  const sigIndex = new Map();
   const t0 = performance.now();
   const TIMEOUT_SHORT = 750, TIMEOUT_LONG = 1500, TIMEOUT_HARD = 2000, TARGET = 100;
 
@@ -1019,7 +1019,17 @@ function findKRoutes(fromName, toName) {
     if (!route) return;
     collectEdges(route.path);
     const sig = routeSig(route.path);
-    if (!seenSigs.has(sig)) { seenSigs.add(sig); results.push(route); }
+    if (!sigIndex.has(sig)) {
+      sigIndex.set(sig, results.length);
+      results.push(route);
+    } else {
+      const idx = sigIndex.get(sig);
+      const old = results[idx];
+      const newT = quickTransfers(route.path), oldT = quickTransfers(old.path);
+      if (newT < oldT || (newT === oldT && route.distance < old.distance)) {
+        results[idx] = route;
+      }
+    }
   }
 
   function realEdges(path) {
@@ -1094,17 +1104,31 @@ function findKRoutes(fromName, toName) {
   for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc, 0));
 
   // Phase 1b: via-point search — force routes through each cross-company transfer
-  for (const [u, v] of CROSS_TRANSFERS) {
+  // Collect all cross-company station pairs (same-name + cross-name) by grp
+  const viaPairs = [];
+  const grpStations = new Map();
+  for (let i = 0; i < N; i++) {
+    const g = grp[i];
+    if (!grpStations.has(g)) grpStations.set(g, []);
+    grpStations.get(g).push(i);
+  }
+  for (const [g, ids] of grpStations) {
+    if (srcGrps.has(g) || dstGrps.has(g)) continue;
+    for (let a = 0; a < ids.length; a++) {
+      for (let b = a + 1; b < ids.length; b++) {
+        if (operatorOf(S[ids[a]][2]) !== operatorOf(S[ids[b]][2])) {
+          viaPairs.push([ids[a], ids[b]]);
+        }
+      }
+    }
+  }
+  for (const [u, v] of viaPairs) {
     if (timeup()) break;
-    const opU = operatorOf(S[u][2]), opV = operatorOf(S[v][2]);
-    if (opU === opV) continue;
     for (const [mid, next] of [[u, v], [v, u]]) {
-      // High tc to prefer same-line arrival/departure (no detour via other lines)
       const leg1 = dijkstraP(srcSet, new Set([mid]), new Map(), 50, 0);
       if (!leg1) continue;
       const leg2 = dijkstraP(new Set([next]), dstSet, new Map(), 50, 0);
       if (!leg2) continue;
-      // Ensure mid/next are included despite path trimming
       const p1 = leg1.path, p2 = leg2.path;
       const path = [...p1];
       if (path[path.length - 1] !== mid) path.push(mid);
