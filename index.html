@@ -1015,12 +1015,16 @@ function findKRoutes(fromName, toName) {
     }
   }
 
+  function hasDirectEdge(a, b) {
+    return adj[a].some(e => e.to === b);
+  }
+
   function tryAdd(route) {
     if (!route) return;
-    // Remove intermediate nodes within same-grp chains (e.g. A(C)→B(I)→C(M) at 大手町 → A(C)→C(M))
+    // Remove intermediate nodes in same-grp chains ONLY if prev↔next have a direct edge
     const p = route.path;
     for (let i = 1; i < p.length - 1; ) {
-      if (grp[p[i-1]] === grp[p[i]] && grp[p[i]] === grp[p[i+1]]) p.splice(i, 1);
+      if (grp[p[i-1]] === grp[p[i]] && grp[p[i]] === grp[p[i+1]] && hasDirectEdge(p[i-1], p[i+1])) p.splice(i, 1);
       else i++;
     }
     collectEdges(route.path);
@@ -1226,7 +1230,7 @@ function findKRoutes(fromName, toName) {
       }
     }
     r.cross = paidCross + toeiCross;
-    r.score = r.distance + r.transfers * 1.5 + paidCross * 3 + toeiCross * 0.3;
+    r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3;
   }
 
   // Dedupe
@@ -1697,19 +1701,22 @@ function buildRouteHtml(path) {
       if (!skipThis) {
         html += '<div class="route-station">';
         html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-        html += '<div class="route-name">' + escHtml(S[first][1]);
+        html += '<div class="route-name">';
         if (isTransferStart) {
           const prevSeg = famSegments[si-1];
-          const prevLastLine = S[prevSeg.stations[prevSeg.stations.length-1]][2];
+          const prevLast = prevSeg.stations[prevSeg.stations.length-1];
+          const prevLastLine = S[prevLast][2];
           const pc = LINES[prevLastLine].color;
+          html += escHtml(S[prevLast][1]);
           html += '<span class="line-badge" style="background:' + pc + '">' + LINES[prevLastLine].name + '</span>';
           html += '<span class="route-arrow" style="font-size:0.7rem;vertical-align:middle">→</span>';
+          html += escHtml(S[first][1]);
           html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
           html += '<span class="route-transfer">乗換</span>';
-          const prevLast = prevSeg.stations[prevSeg.stations.length-1];
           const farNote = getFarNote(prevLast, first);
           if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
         } else {
+          html += escHtml(S[first][1]);
           html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
         }
         html += '</div></div>';
