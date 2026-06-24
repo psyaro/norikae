@@ -100,7 +100,13 @@ h1 {
   text-transform: uppercase;
 }
 .search-input-wrapper { position: relative; display: flex; align-items: center; width: 100%; }
-.search-input-wrapper input { padding-right: 48px; }
+.search-input-wrapper input { padding-right: 72px; }
+.input-clear-btn {
+  position: absolute; right: 40px; background: none; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 4px; font-size: 1rem; line-height: 1; display: flex; align-items: center;
+  justify-content: center; border-radius: 50%; transition: all 0.15s; z-index: 5; width: 24px; height: 24px;
+}
+.input-clear-btn:hover { color: #ef4444; background: #fee2e2; }
 .input-group input, .input-group select {
   width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md);
   font-size: 0.95rem; color: var(--text-main); background: #fff; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -403,9 +409,10 @@ optgroup { font-weight: 700; }
             <button class="gps-btn" onclick="gpsLocate('from')" title="現在地から検索">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
             </button>
+            <button class="input-clear-btn" onclick="clearStations('from')" title="クリア">×</button>
             <datalist id="from-stations"></datalist>
           </div>
-          <div class="radius-row">
+          <div class="radius-row" id="from-radius-row" style="display:none">
             <div class="radius-selector">
               <span>周辺範囲:</span>
               <select id="from-radius" onchange="onRadiusChange('from')">
@@ -415,7 +422,6 @@ optgroup { font-weight: 700; }
                 <option value="1.5" selected>1.5km以内</option>
               </select>
             </div>
-            <button class="clear-btn" onclick="clearStations('from')" title="クリア">×</button>
           </div>
         </div>
       </div>
@@ -447,9 +453,10 @@ optgroup { font-weight: 700; }
             <button class="gps-btn" onclick="gpsLocate('to')" title="現在地から検索">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"></path><circle cx="12" cy="10" r="3"></circle></svg>
             </button>
+            <button class="input-clear-btn" onclick="clearStations('to')" title="クリア">×</button>
             <datalist id="to-stations"></datalist>
           </div>
-          <div class="radius-row">
+          <div class="radius-row" id="to-radius-row" style="display:none">
             <div class="radius-selector">
               <span>周辺範囲:</span>
               <select id="to-radius" onchange="onRadiusChange('to')">
@@ -459,7 +466,6 @@ optgroup { font-weight: 700; }
                 <option value="1.5" selected>1.5km以内</option>
               </select>
             </div>
-            <button class="clear-btn" onclick="clearStations('to')" title="クリア">×</button>
           </div>
         </div>
       </div>
@@ -2557,6 +2563,12 @@ function clearStations(prefix) {
   document.getElementById(prefix).value = "";
   delete gpsNearby[prefix];
   updateStations(prefix);
+  const rr = document.getElementById(prefix + '-radius-row');
+  if (rr) rr.style.display = 'none';
+}
+function showRadiusRow(prefix) {
+  const rr = document.getElementById(prefix + '-radius-row');
+  if (rr) rr.style.display = '';
 }
 
 // === GPS nearby search ===
@@ -2618,6 +2630,7 @@ function gpsLocate(prefix) {
         gpsNearby[prefix] = { lat, lon, ids: result.ids, label: nearbyLabel(prefix, result) };
         input.value = gpsNearby[prefix].label;
         document.getElementById(prefix + '-line').value = '';
+        showRadiusRow(prefix);
       },
       err => { input.disabled = false; input.value = ''; alert('位置情報の取得に失敗しました'); },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -2687,6 +2700,7 @@ function restoreArea(prefix, saved) {
       let detail = stnCount + '駅' + (result.busCount > 0 ? '・' + result.busCount + '停' : '');
       gpsNearby[prefix] = { lat, lon, ids: result.ids, label: '地図指定(' + detail + ')' };
       document.getElementById(prefix).value = gpsNearby[prefix].label;
+      showRadiusRow(prefix);
       return true;
     }
   }
