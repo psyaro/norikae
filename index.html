@@ -1120,6 +1120,35 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
   return { distance: Math.round(real[bn] * 10) / 10, path };
 }
 
+// 距離 + 乗換コスト + ランダムジッターのDijkstra。
+// 辺重みを毎回少し揺らすことで、同じ到着駅・同じ乗換回数でも経由路線が異なる
+// 別ルートを引き出す（物量で多様性を稼ぐ）。各到着ノードへの最短を全て返す。
+function jitteredDijkstra(srcSet, dstSet, jitter, transferCost) {
+  const dist = new Float64Array(N).fill(Infinity);
+  const real = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const heap = [];
+  for (const s of srcSet) { dist[s] = 0; real[s] = 0; hPush(heap, [0, s]); }
+  while (heap.length > 0) {
+    const [d, u] = hPop(heap);
+    if (d > dist[u]) continue;
+    for (const { to: v, w } of adj[u]) {
+      let cost = w;
+      if (w === 0 && isTransferEdge(u, v)) cost = transferCost;
+      cost *= (1 + (Math.random() * 2 - 1) * jitter);
+      const nd = d + cost;
+      if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
+    }
+  }
+  const routes = [];
+  for (const t of dstSet) {
+    if (dist[t] === Infinity) continue;
+    const path = []; let c = t; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
+    routes.push({ distance: Math.round(real[t] * 10) / 10, path });
+  }
+  return routes;
+}
+
 function findKRoutes(fromName, toName) {
   const srcIds = nameToIds[fromName];
   const dstIds = nameToIds[toName];
@@ -1158,11 +1187,17 @@ function findKRoutes(fromName, toName) {
     const ow = {}; for (const o of OPS) ow[o] = (o === cheap) ? 0.3 : 1.5;
     add(fareApproxDijkstra(srcSet, dstSet, 0, ow));
   }
-  // 4) 運賃近似 + 会社重みランダム化 + ジッターを時間予算まで物量で回す
+  // 4) 物量探索を時間予算まで回す（2系統を交互に）
+  //    a) 運賃近似 + 会社重みランダム化: 最安の組み合わせを探る
+  //    b) 距離+乗換ジッター: 同じ到着駅・乗換回数でも別経由の多様なルートを引き出す
   while (performance.now() - t0 < TIMEOUT) {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 12; i++) {
       const ow = {}; for (const o of OPS) ow[o] = 0.3 + Math.random() * 2;
       add(fareApproxDijkstra(srcSet, dstSet, 0.3, ow));
+    }
+    for (let i = 0; i < 8; i++) {
+      const tc = Math.random() * 8; // 乗換コストもランダム（乗換多/少のバリエーション）
+      for (const r of jitteredDijkstra(srcSet, dstSet, 0.35, tc)) add(r);
     }
   }
 
