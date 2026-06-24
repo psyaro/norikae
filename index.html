@@ -253,7 +253,7 @@ optgroup { font-weight: 700; }
     <h2>注意事項</h2>
     <p>・実際の運賃とは異なる場合があります<br>
        ・会社間の連絡運輸・乗継割引は考慮していません<br>
-       ・JR大都市近郊区間の特例（大回り乗車）は未対応<br>
+       ・JR大都市近郊区間の特例（大回り乗車）は最短営業キロで自動計算<br>
        ・一部の乗換は徒歩移動を伴います</p>
   </div>
   <div class="card about-section">
@@ -1385,8 +1385,34 @@ function getFarNote(nodeA, nodeB) {
 }
 
 // === FARE CALCULATION (Metro + JR sections; Toei is free) ===
+// 大回り乗車特例: JR大都市近郊区間内の最短営業キロで運賃計算。
+// JRサブグラフ(乗換0距離辺を含む)で始終点間の最短距離をキャッシュ付きで求める。
+const jrShortestCache = new Map();
+function jrShortestDist(startId, endId) {
+  const sg = grp[startId], eg = grp[endId];
+  if (sg === eg) return 0;
+  const ck = sg * 10000 + eg;
+  if (jrShortestCache.has(ck)) return jrShortestCache.get(ck);
+  const dist = new Float64Array(N).fill(Infinity);
+  const heap = [];
+  for (let n = 0; n < N; n++) { if (grp[n] === sg && JR_LINES.has(S[n][2])) { dist[n] = 0; hPush(heap, [0, n]); } }
+  while (heap.length > 0) {
+    const [d, u] = hPop(heap);
+    if (d > dist[u]) continue;
+    for (const { to: v, w } of adj[u]) {
+      if (!JR_LINES.has(S[v][2])) continue;
+      const nd = d + w;
+      if (nd < dist[v]) { dist[v] = nd; hPush(heap, [nd, v]); }
+    }
+  }
+  let best = Infinity;
+  for (let n = 0; n < N; n++) { if (grp[n] === eg && dist[n] < best) best = dist[n]; }
+  const result = best === Infinity ? -1 : Math.round(best * 10) / 10;
+  jrShortestCache.set(ck, result);
+  return result;
+}
+
 function calcRouteFare(path) {
-  // Split path into operator sections (metro / toei / jr / other)
   if (path.length < 2) return { metroFares: [], totalTicket: 0, totalIC: 0, allMetro: true, hasJR: false, crossCompany: false };
   const sections = [];
   let secStart = 0;
@@ -1401,14 +1427,13 @@ function calcRouteFare(path) {
   }
   sections.push({ start: secStart, end: path.length - 1, op: secOp });
 
-  // metroFares holds ALL paid fare segments (metro + jr); kept name for display compat
   const metroFares = [];
   let totalTicket = 0, totalIC = 0;
   let paidSections = 0, totalSections = 0;
   let hasJR = false;
   const ops = new Set();
   for (const sec of sections) {
-    if (sec.end > sec.start) ops.add(sec.op); // only count operators that actually travel
+    if (sec.end > sec.start) ops.add(sec.op);
     if (sec.op !== "metro" && sec.op !== "jr" && sec.op !== "tx" && sec.op !== "keisei") continue;
     totalSections++;
     let dist = 0;
@@ -1418,20 +1443,25 @@ function calcRouteFare(path) {
     }
     dist = Math.round(dist * 10) / 10;
     if (dist > 0) {
+      let fareDist = dist;
+      let omawari = false;
+      if (sec.op === "jr") {
+        const sd = jrShortestDist(path[sec.start], path[sec.end]);
+        if (sd >= 0 && sd < dist) { fareDist = sd; omawari = true; }
+      }
       let fare;
       if (sec.op === "jr") {
-        fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(dist);
+        fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(fareDist);
         hasJR = true;
       } else if (sec.op === "tx") { fare = getTXFare(dist); }
       else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
       else { fare = getFare(dist); }
-      metroFares.push({ dist, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
+      metroFares.push({ dist, fareDist, omawari, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       totalTicket += fare.ticket;
       totalIC += fare.ic;
       paidSections++;
     }
   }
-  // allMetro: single paid section and it's metro and no other operators present
   const crossCompany = ops.size > 1;
   const allMetro = (metroFares.length === 1 && metroFares[0].op === "metro" && !crossCompany);
   return { metroFares, totalTicket, totalIC, allMetro, hasJR, crossCompany };
@@ -1805,7 +1835,8 @@ function renderRoutes() {
       html += fi.metroFares.map(f => {
         const tag = {jr:"JR",metro:"メトロ",tx:"TX",keisei:"京成"}[f.op] || f.op;
         const disc = f.fare.discounted ? ' <span style="color:#d32f2f;font-size:0.7rem">5割引</span>' : '';
-        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>' + disc;
+        const oma = f.omawari ? ' <span style="color:#0089c7;font-size:0.7rem">最短' + f.fareDist + 'km</span>' : '';
+        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>' + disc + oma;
       }).join(' ＋ ');
       html += '</div>';
     }
@@ -1827,7 +1858,6 @@ function renderRoutes() {
       html += '<div class="route-warn">⚠ 他社線乗り換えあり（連絡運輸・乗継割引が別途設定されている場合があります）</div>';
     }
     if (fi.hasJR) {
-      html += '<div class="route-warn">⚠ JR線は大都市近郊区間の特例（大回り乗車）の対象となる場合があります</div>';
     }
 
     html += '<details ontoggle="lazyRouteDetail(this,' + ri + ')"><summary>詳細</summary>';
