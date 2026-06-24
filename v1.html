@@ -946,150 +946,9 @@ function companyCost(opA, opB) {
   if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
   return COMPANY_COST;
 }
-// 乗換エッジ判定: 同一駅(grp)で路線コードが変わる0距離移動 = 列車乗り換え
-function isTransferEdge(u, v) { return grp[u] === grp[v] && S[u][2] !== S[v][2]; }
-function edgeWeight(u, v) { for (const e of adj[u]) if (e.to === v) return e.w; return Infinity; }
-function hasDirectEdge(a, b) { return adj[a].some(e => e.to === b); }
-
-// 経路の正規化: 先頭末尾の同一grp除去 + 直接エッジのある同一grpチェーンの中間除去
-function cleanPath(path) {
-  while (path.length > 1 && grp[path[0]] === grp[path[1]]) path.shift();
-  while (path.length > 1 && grp[path[path.length-1]] === grp[path[path.length-2]]) path.pop();
-  for (let i = 1; i < path.length - 1; ) {
-    if (grp[path[i-1]] === grp[path[i]] && grp[path[i]] === grp[path[i+1]] && hasDirectEdge(path[i-1], path[i+1])) path.splice(i, 1);
-    else i++;
-  }
-  return path;
-}
-
-function quickTransfers(path) {
-  let t = 0;
-  for (let i = 1; i < path.length; i++) {
-    if (S[path[i]][2] !== S[path[i-1]][2] && grp[path[i]] === grp[path[i-1]]) t++;
-  }
-  return t;
-}
-
-// 純粋な距離Dijkstra（Plateau用）
-function plainDijkstra(srcSet) {
-  const dist = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
-  const heap = [];
-  for (const s of srcSet) { dist[s] = 0; hPush(heap, [0, s]); }
-  while (heap.length > 0) {
-    const [d, u] = hPop(heap);
-    if (d > dist[u]) continue;
-    for (const { to: v, w } of adj[u]) {
-      const nd = d + w;
-      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; hPush(heap, [nd, v]); }
-    }
-  }
-  return { dist, prev };
-}
-
-// === RAPTOR風: ラウンド=乗換回数 ===
-// 状態(駅, 乗換回数k)のDijkstra。各kでの目的地最短距離を求め、
-// 「乗換が増えるほど距離が縮む」Pareto最適な経路を抽出する。
-function roundShortest(srcSet, dstSet, K) {
-  const labels = [], prev = [];
-  for (let k = 0; k <= K; k++) {
-    labels.push(new Float64Array(N).fill(Infinity));
-    prev.push(new Int32Array(N).fill(-1));
-  }
-  const heap = [];
-  for (const s of srcSet) { labels[0][s] = 0; hPush(heap, [0, s, 0]); }
-  while (heap.length > 0) {
-    const [d, u, k] = hPop(heap);
-    if (d > labels[k][u]) continue;
-    for (const { to: v, w } of adj[u]) {
-      let nk = k;
-      if (w === 0 && isTransferEdge(u, v)) nk = k + 1;
-      if (nk > K) continue;
-      const nd = d + w;
-      if (nd < labels[nk][v]) { labels[nk][v] = nd; prev[nk][v] = u; hPush(heap, [nd, v, nk]); }
-    }
-  }
-  const routes = [];
-  let best = Infinity;
-  for (let k = 0; k <= K; k++) {
-    let bd = Infinity, bn = -1;
-    for (const t of dstSet) if (labels[k][t] < bd) { bd = labels[k][t]; bn = t; }
-    if (bn === -1 || bd >= best - 1e-9) continue; // 乗換を増やしても縮まないなら不要
-    best = bd;
-    // 経路復元（kを追跡しながら遡る）
-    const path = []; let c = bn, ck = k;
-    while (c !== -1) {
-      path.push(c);
-      const p = prev[ck][c];
-      if (p !== -1 && isTransferEdge(p, c)) ck--;
-      c = p;
-    }
-    path.reverse();
-    routes.push({ distance: Math.round(bd * 10) / 10, path });
-  }
-  return routes;
-}
-
-// === Plateau法: 構造的に異なる代替経路 ===
-// 出発側・到着側の最短経路木で共有される連続区間(plateau)を見つけ、
-// 各plateauを通る経路を代替候補として生成する。
-function plateauRoutes(srcSet, dstSet, limit) {
-  const F = plainDijkstra(srcSet);
-  const B = plainDijkstra(dstSet); // 無向グラフなので逆向き最短も同じ構造
-  // forward最短木の辺集合
-  const fEdge = new Set();
-  for (let v = 0; v < N; v++) {
-    if (F.prev[v] >= 0) { const u = F.prev[v]; fEdge.add(Math.min(u,v) * 100000 + Math.max(u,v)); }
-  }
-  // 共有辺（forward木 ∩ backward木）でサブグラフを構築
-  const sharedAdj = new Map();
-  for (let v = 0; v < N; v++) {
-    if (B.prev[v] >= 0) {
-      const u = B.prev[v];
-      if (fEdge.has(Math.min(u,v) * 100000 + Math.max(u,v))) {
-        if (!sharedAdj.has(u)) sharedAdj.set(u, []);
-        if (!sharedAdj.has(v)) sharedAdj.set(v, []);
-        sharedAdj.get(u).push(v); sharedAdj.get(v).push(u);
-      }
-    }
-  }
-  // 連結成分(plateau)を抽出
-  const visited = new Set();
-  const plateaus = [];
-  for (const start of sharedAdj.keys()) {
-    if (visited.has(start)) continue;
-    const comp = []; const stack = [start]; visited.add(start);
-    while (stack.length) {
-      const x = stack.pop(); comp.push(x);
-      for (const y of sharedAdj.get(x)) if (!visited.has(y)) { visited.add(y); stack.push(y); }
-    }
-    plateaus.push({ comp, val: F.dist[comp[0]] + B.dist[comp[0]] });
-  }
-  // 最適経路長に近いplateauを優先
-  plateaus.sort((a, b) => a.val - b.val);
-  const result = [];
-  for (const pl of plateaus) {
-    if (result.length >= limit) break;
-    // tに最も近い端点bを選び、s→b→t を構成
-    let b = pl.comp[0];
-    for (const x of pl.comp) if (B.dist[x] < B.dist[b]) b = x;
-    if (B.dist[b] === Infinity || F.dist[b] === Infinity) continue;
-    const path = [];
-    let c = b; while (c !== -1) { path.push(c); c = F.prev[c]; } path.reverse();
-    let c2 = B.prev[b]; while (c2 !== -1) { path.push(c2); c2 = B.prev[c2]; }
-    result.push({ distance: Math.round((F.dist[b] + B.dist[b]) * 10) / 10, path });
-  }
-  return result;
-}
-
-// === 運賃近似Dijkstra ===
-// 辺重みを「運賃への寄与」にする: 都営(無料)≈0、有料会社=実距離。
-// これで最短探索すると「都営多用・有料区間最小」の安い経路が出やすい。
-// jitter>0 で辺重みにランダムノイズを加え、回すたびに違う経路を出す（物量探索用）。
-function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
-  // opWeight: 会社ごとの重み係数。会社別の運賃曲線の違い（初乗り額の差など）を
-  // 距離だけでは捉えられないため、会社の魅力度をランダムに変えて多様な組み合わせを探る。
-  opWeight = opWeight || {};
+function dijkstraP(srcSet, dstSet, penalty, transferCost, ccMul) {
+  transferCost = transferCost || 0;
+  if (ccMul === undefined) ccMul = 1;
   const dist = new Float64Array(N).fill(Infinity);
   const real = new Float64Array(N).fill(Infinity);
   const prev = new Int32Array(N).fill(-1);
@@ -1098,23 +957,32 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
   while (heap.length > 0) {
     const [d, u] = hPop(heap);
     if (d > dist[u]) continue;
-    for (const { to: v, w } of adj[u]) {
-      let fw;
-      if (w === 0) fw = 0.3; // 乗換コスト（初乗り重複の近似、無駄な乗換を抑制）
-      else {
-        const op = operatorOf(S[u][2]);
-        fw = (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
+    for (const {to: v, w} of adj[u]) {
+      const key = Math.min(u,v)*1000+Math.max(u,v);
+      let tc = 0;
+      if (w === 0) {
+        if (lineFamily(S[u][2]) !== lineFamily(S[v][2])) {
+          tc = transferCost;
+          tc += companyCost(operatorOf(S[u][2]), operatorOf(S[v][2])) * ccMul;
+        } else if (S[u][2] !== S[v][2]) {
+          tc = INTRA_FAMILY_COST;
+        }
       }
-      if (jitter) fw *= (1 + (Math.random() * 2 - 1) * jitter);
-      const nd = d + fw;
+      const nd = d + w + tc + (penalty.get(key)||0);
       if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
     }
   }
-  let bd = Infinity, bn = -1;
-  for (const t of dstSet) if (dist[t] < bd) { bd = dist[t]; bn = t; }
-  if (bn === -1) return null;
-  const path = []; let c = bn; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
-  return { distance: Math.round(real[bn] * 10) / 10, path };
+  let bestD = Infinity, bestR = 0, bestN = -1;
+  for (const d of dstSet) if (dist[d] < bestD) { bestD = dist[d]; bestR = real[d]; bestN = d; }
+  if (bestN === -1) return null;
+  const same = [...dstSet].filter(d => dist[d] === bestD);
+  if (same.length > 1) for (const d of same) {
+    if (prev[d] >= 0 && S[prev[d]][2] === S[d][2]) { bestN = d; bestR = real[d]; break; }
+  }
+  const path = []; let c = bestN; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
+  while (path.length > 1 && grp[path[0]] === grp[path[1]]) path.shift();
+  while (path.length > 1 && grp[path[path.length-1]] === grp[path[path.length-2]]) path.pop();
+  return { distance: Math.round(bestR * 10) / 10, path };
 }
 
 function findKRoutes(fromName, toName) {
@@ -1126,47 +994,235 @@ function findKRoutes(fromName, toName) {
   addCrossTransferIds(fromName, srcSet);
   addCrossTransferIds(toName, dstSet);
 
+  const results = [];
+  const sigIndex = new Map();
   const t0 = performance.now();
-  const K = 6;          // 最大乗換回数（ラウンド数）
-  const PLATEAU_LIMIT = 120;
-  const TIMEOUT = 1500;
+  const TIMEOUT_SHORT = 750, TIMEOUT_LONG = 1500, TIMEOUT_HARD = 2000, TARGET = 100;
 
-  // 経路プール（pathKeyで重複排除しながら収集）
-  const pool = [];
-  const seen = new Set();
-  function add(r) {
-    if (!r || r.path.length < 2) return;
-    cleanPath(r.path);
-    const k = r.path.join(',');
-    if (seen.has(k)) return;
-    seen.add(k);
-    pool.push(r);
+  const srcGrps = new Set([...srcSet].map(id => grp[id]));
+  const dstGrps = new Set([...dstSet].map(id => grp[id]));
+  const triedEdge = new Set();
+  const triedPair = new Set();
+  const triedNode = new Set();
+  const allEdges = new Set();
+  const TC_ALL = [0, 0.3, 0.6, 1, 1.5, 2.5, 4, 7, 10, 15, 20, 30, 50];
+  const TC_FAST = [0, 1, 4, 15];
+
+  function elapsed() { return performance.now() - t0; }
+  let cachedDedup = 0, cacheAt = -1;
+  function dedupCached() {
+    const now = results.length;
+    if (now !== cacheAt) { cachedDedup = dedupedCount(); cacheAt = now; }
+    return cachedDedup;
+  }
+  function timeup() {
+    const e = elapsed();
+    if (e >= TIMEOUT_HARD) return true;
+    if (e >= TIMEOUT_SHORT && dedupCached() >= 50) return true;
+    if (e >= TIMEOUT_LONG) return true;
+    return false;
   }
 
-  // 1) RAPTOR風: 乗換回数別の最短経路（距離Pareto）
-  for (const r of roundShortest(srcSet, dstSet, K)) add(r);
-  // 2) Plateau法: 構造的に異なる代替経路
-  for (const r of plateauRoutes(srcSet, dstSet, PLATEAU_LIMIT)) add(r);
-  // 3) 運賃近似Dijkstra: 会社別バイアスを固定で何通りか試す
-  //    （メトロ初乗り180円 vs JR短距離160円のように、会社で初乗りが違うため）
-  const OPS = ['metro', 'jr', 'tx', 'keisei'];
-  add(fareApproxDijkstra(srcSet, dstSet, 0));
-  for (const cheap of OPS) {
-    const ow = {}; for (const o of OPS) ow[o] = (o === cheap) ? 0.3 : 1.5;
-    add(fareApproxDijkstra(srcSet, dstSet, 0, ow));
-  }
-  // 4) 運賃近似 + 会社重みランダム化 + ジッターを時間予算まで物量で回す
-  while (performance.now() - t0 < TIMEOUT) {
-    for (let i = 0; i < 20; i++) {
-      const ow = {}; for (const o of OPS) ow[o] = 0.3 + Math.random() * 2;
-      add(fareApproxDijkstra(srcSet, dstSet, 0.3, ow));
+  function collectEdges(path) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const u = path[i], v = path[i+1];
+      if (grp[u] !== grp[v]) allEdges.add(Math.min(u,v)*1000+Math.max(u,v));
     }
   }
 
-  const searchMs = Math.round(performance.now() - t0);
+  function hasDirectEdge(a, b) {
+    return adj[a].some(e => e.to === b);
+  }
 
-  // 素通り乗換を除外し、空・自明な経路も弾く
-  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path));
+  function tryAdd(route) {
+    if (!route) return;
+    // Remove intermediate nodes in same-grp chains ONLY if prev↔next have a direct edge
+    const p = route.path;
+    for (let i = 1; i < p.length - 1; ) {
+      if (grp[p[i-1]] === grp[p[i]] && grp[p[i]] === grp[p[i+1]] && hasDirectEdge(p[i-1], p[i+1])) p.splice(i, 1);
+      else i++;
+    }
+    collectEdges(route.path);
+    const sig = routeSig(route.path);
+    if (!sigIndex.has(sig)) {
+      sigIndex.set(sig, results.length);
+      results.push(route);
+    } else {
+      const idx = sigIndex.get(sig);
+      const old = results[idx];
+      const newT = quickTransfers(route.path), oldT = quickTransfers(old.path);
+      if (newT < oldT || (newT === oldT && route.distance < old.distance)) {
+        results[idx] = route;
+      }
+    }
+  }
+
+  function realEdges(path) {
+    const keys = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const u = path[i], v = path[i+1];
+      if (grp[u] !== grp[v]) keys.push(Math.min(u,v)*1000+Math.max(u,v));
+    }
+    return keys;
+  }
+
+  function nodeBlockPenalty(g) {
+    const pen = new Map();
+    for (let n = 0; n < N; n++) {
+      if (grp[n] !== g) continue;
+      for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
+    }
+    return pen;
+  }
+
+  function quickTransfers(path) {
+    let t = 0;
+    for (let i = 1; i < path.length; i++) {
+      if (S[path[i]][2] !== S[path[i-1]][2] && grp[path[i]] === grp[path[i-1]]) t++;
+    }
+    return t;
+  }
+
+  function dedupedCount() {
+    const byKey = new Set();
+    for (const r of results) {
+      byKey.add(routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + quickTransfers(r.path));
+    }
+    return byKey.size;
+  }
+
+  function runWithCosts(pen, tcs) {
+    for (const tc of tcs) {
+      tryAdd(dijkstraP(srcSet, dstSet, pen, tc));
+      tryAdd(dijkstraP(srcSet, dstSet, pen, tc, 0));
+    }
+  }
+
+  function processRoute(ri) {
+    const edges = realEdges(results[ri].path);
+    for (const key of edges) {
+      if (timeup()) return;
+      if (triedEdge.has(key)) continue;
+      triedEdge.add(key);
+      runWithCosts(new Map([[key, 999]]), TC_ALL);
+    }
+    const seenG = [];
+    for (const id of results[ri].path) { const g = grp[id]; if (seenG[seenG.length-1] !== g) seenG.push(g); }
+    for (const g of seenG) {
+      if (timeup()) return;
+      if (srcGrps.has(g) || dstGrps.has(g) || triedNode.has(g)) continue;
+      triedNode.add(g);
+      runWithCosts(nodeBlockPenalty(g), TC_ALL);
+    }
+    for (let a = 0; a < edges.length && !timeup(); a++) {
+      for (let b = a + 1; b < edges.length && !timeup(); b++) {
+        const pk = edges[a] + '_' + edges[b];
+        if (triedPair.has(pk)) continue;
+        triedPair.add(pk);
+        runWithCosts(new Map([[edges[a], 999], [edges[b], 999]]), TC_FAST);
+      }
+    }
+  }
+
+  // Phase 1a: base search (normal company cost + zero company cost)
+  for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc));
+  for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc, 0));
+
+  // Phase 1b: via-point search — force routes through each cross-company transfer.
+  // 直接エッジ(0距離乗換)がある異会社ペアのみを経由点にする。
+  // grpが同じでも直接繋がっていないペア（例: 御茶ノ水JR↔小川町、間に新御茶ノ水）は連結しない。
+  const viaPairs = [];
+  for (let u = 0; u < N; u++) {
+    if (srcGrps.has(grp[u]) || dstGrps.has(grp[u])) continue;
+    for (const e of adj[u]) {
+      const v = e.to;
+      if (e.w === 0 && u < v && operatorOf(S[u][2]) !== operatorOf(S[v][2])) {
+        viaPairs.push([u, v]);
+      }
+    }
+  }
+  for (const [u, v] of viaPairs) {
+    if (timeup()) break;
+    for (const [mid, next] of [[u, v], [v, u]]) {
+      const leg1 = dijkstraP(srcSet, new Set([mid]), new Map(), 50, 0);
+      if (!leg1) continue;
+      const leg2 = dijkstraP(new Set([next]), dstSet, new Map(), 50, 0);
+      if (!leg2) continue;
+      const p1 = leg1.path, p2 = leg2.path;
+      const path = [...p1];
+      if (path[path.length - 1] !== mid) path.push(mid);
+      if (p2[0] === next) { for (const id of p2) path.push(id); }
+      else { path.push(next); for (const id of p2) path.push(id); }
+      const dist = Math.round((leg1.distance + leg2.distance) * 10) / 10;
+      tryAdd({ distance: dist, path });
+    }
+  }
+
+  // Phase 2: iterative blocking from found routes
+  let processed = 0;
+  let extraEdgesDone = false, exhaustiveNodesDone = false, corridorsDone = false;
+  while (!timeup() && dedupCached() < TARGET) {
+    const batchEnd = results.length;
+
+    if (batchEnd > processed) {
+      for (let ri = processed; ri < batchEnd && !timeup(); ri++) processRoute(ri);
+      processed = batchEnd;
+      continue;
+    }
+
+    // Phase 3: edges from sig-duplicate routes (not yet in triedEdge)
+    if (!extraEdgesDone) {
+      extraEdgesDone = true;
+      for (const key of [...allEdges]) {
+        if (timeup()) break;
+        if (triedEdge.has(key)) continue;
+        triedEdge.add(key);
+        runWithCosts(new Map([[key, 999]]), TC_FAST);
+      }
+      continue;
+    }
+
+    // Phase 4: exhaustive node blocking — all station groups, hubs first
+    if (!exhaustiveNodesDone) {
+      exhaustiveNodesDone = true;
+      const groupConn = new Map();
+      for (let n = 0; n < N; n++) groupConn.set(grp[n], (groupConn.get(grp[n]) || 0) + adj[n].length);
+      const groups = [...groupConn.entries()]
+        .filter(([g]) => !srcGrps.has(g) && !dstGrps.has(g) && !triedNode.has(g))
+        .sort((a, b) => b[1] - a[1]);
+      for (const [g] of groups) {
+        if (timeup()) break;
+        triedNode.add(g);
+        runWithCosts(nodeBlockPenalty(g), TC_FAST);
+      }
+      continue;
+    }
+
+    // Phase 5: block entire route corridors — all intermediate nodes of each found route
+    if (!corridorsDone) {
+      corridorsDone = true;
+      for (let ri = 0; ri < results.length && !timeup(); ri++) {
+        const pen = new Map();
+        for (const id of results[ri].path) {
+          const g = grp[id];
+          if (srcGrps.has(g) || dstGrps.has(g)) continue;
+          for (let n = 0; n < N; n++) {
+            if (grp[n] !== g) continue;
+            for (const { to } of adj[n]) pen.set(Math.min(n,to)*1000+Math.max(n,to), 99999);
+          }
+        }
+        if (pen.size > 0) runWithCosts(pen, TC_FAST);
+      }
+      continue;
+    }
+
+    break;
+  }
+
+  const searchMs = Math.round(elapsed());
+
+  // Filter out passthrough-transfer routes (素通り乗換: 乗換ハブを徒歩で素通り)
+  const filtered = results.filter(r => !hasPassthroughTransfer(r.path));
 
   // Enrich with metadata
   for (const r of filtered) {
@@ -1210,7 +1266,7 @@ function findKRoutes(fromName, toName) {
 
   deduped.sort((a, b) => a.score - b.score);
   deduped.searchMs = searchMs;
-  deduped.rawCount = pool.length;
+  deduped.rawCount = results.length;
   return deduped;
 }
 
@@ -1449,7 +1505,7 @@ function calculate() {
     if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
     lastFromName = fromName;
     lastToName = toName;
-    currentSort = 'price';
+    currentSort = 'recommend';
     displayCount = 30;
     renderRoutes();
   }, 20);
