@@ -238,7 +238,7 @@ optgroup { font-weight: 700; }
     <h2>運賃計算</h2>
     <table class="fare-table">
       <tr><th>事業者</th><th>計算方法</th></tr>
-      <tr><td>東京メトロ</td><td>通常料金（バリアフリー料金込み）</td></tr>
+      <tr><td>東京メトロ</td><td>通常料金＋バリアフリー料金10円（綾瀬〜北千住のみは除外）</td></tr>
       <tr><td>都営地下鉄</td><td>無料</td></tr>
       <tr><td>JR</td><td>改定後幹線運賃 / 特定区間運賃</td></tr>
       <tr><td>つくばエクスプレス</td><td>半額（きっぷ10円単位切り上げ）</td></tr>
@@ -842,11 +842,12 @@ const FARE_ZONES = [
   { max: 40, ticket: 330, ic: 324 },
 ];
 
-function getFare(km) {
+function getFare(km, noBF) {
   for (const z of FARE_ZONES) {
-    if (km <= z.max) return z;
+    if (km <= z.max) return noBF ? z : { max: z.max, ticket: z.ticket + 10, ic: z.ic + 10 };
   }
-  return FARE_ZONES[FARE_ZONES.length - 1];
+  const z = FARE_ZONES[FARE_ZONES.length - 1];
+  return noBF ? z : { max: z.max, ticket: z.ticket + 10, ic: z.ic + 10 };
 }
 
 // JR 改定後幹線運賃 (営業キロ → 運賃)
@@ -1450,7 +1451,13 @@ function calcRouteFare(path) {
         hasJR = true;
       } else if (sec.op === "tx") { fare = getTXFare(dist); }
       else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
-      else { fare = getFare(dist); }
+      else {
+        // 綾瀬〜北千住のみの利用はバリアフリー料金(10円)を加算しない
+        const isAyaseKitasenju = sec.end - sec.start === 1
+          && ((S[path[sec.start]][1] === '綾瀬' && S[path[sec.end]][1] === '北千住')
+           || (S[path[sec.start]][1] === '北千住' && S[path[sec.end]][1] === '綾瀬'));
+        fare = getFare(dist, isAyaseKitasenju);
+      }
       metroFares.push({ dist, fareDist, omawari, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       totalTicket += fare.ticket;
       totalIC += fare.ic;
