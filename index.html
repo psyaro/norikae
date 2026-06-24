@@ -845,10 +845,10 @@ const FARE_ZONES = [
 
 function getFare(km, noBF) {
   for (const z of FARE_ZONES) {
-    if (km <= z.max) return noBF ? z : { max: z.max, ticket: z.ticket + 10, ic: z.ic + 10 };
+    if (km <= z.max) return noBF ? { max: z.max, ticket: z.ticket - 10, ic: z.ic - 10 } : z;
   }
   const z = FARE_ZONES[FARE_ZONES.length - 1];
-  return noBF ? z : { max: z.max, ticket: z.ticket + 10, ic: z.ic + 10 };
+  return noBF ? { max: z.max, ticket: z.ticket - 10, ic: z.ic - 10 } : z;
 }
 
 // JR 改定後幹線運賃 (営業キロ → 運賃)
