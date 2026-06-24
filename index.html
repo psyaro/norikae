@@ -210,6 +210,9 @@ optgroup { font-weight: 700; }
       </div>
       <button class="clear-btn" onclick="clearStations('to')" title="クリア">×</button>
     </div>
+    <label style="display:flex;align-items:center;gap:6px;margin:8px 0;font-size:0.85rem;cursor:pointer">
+      <input type="checkbox" id="chk-bus" onchange="toggleBusMode()"> 都営バスを含む（無料）
+    </label>
     <button class="calc-btn" onclick="calculate()">経路を検索</button>
     <div style="display:flex;justify-content:center;gap:16px;margin-top:8px;font-size:0.85rem">
       <a href="map.html" style="color:#0089c7">&#127759; 地図から駅を選ぶ</a>
@@ -384,11 +387,12 @@ const LINES = {
   KZ: { name: "京王動物園線", color: "#DD0077" },
   KB: { name: "京王競馬場線", color: "#DD0077" },
   IN: { name: "京王井の頭線", color: "#1B813E" },
+  BUS: { name: "都営バス", color: "#2196F3" },
 };
 
 const METRO_LINES = new Set(["G","M","H","T","C","Y","Z","N","F"]);
 function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
-const TOEI_LINES = new Set(["A","I","S","E","NT","SA"]);
+const TOEI_LINES = new Set(["A","I","S","E","NT","SA","BUS"]);
 const JR_LINES = new Set(["JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JV","JX"]);
 const LOCAL_JR_LINES = new Set(["JP"]); // 地方交通線（幹線と運賃が異なる、運賃計算未対応）
 const TX_LINES = new Set(["TX"]);
@@ -1188,10 +1192,93 @@ for (const ids of Object.values(nameToIds)) {
   for (let i = 1; i < ids.length; i++) ufUnion(ids[0], ids[i]);
 }
 for (const [u, v] of CROSS_TRANSFERS) ufUnion(u, v);
-const grp = new Uint16Array(N);
+const grp = [];
 const grpMap = {};
 let gid = 0;
 for (let i = 0; i < N; i++) { const r = ufFind(i); if (!(r in grpMap)) grpMap[r] = gid++; grp[i] = grpMap[r]; }
+
+// === BUS DATA (lazy load) ===
+let busLoaded = false, busLoading = false;
+const BUS_TRANSFER_WEIGHT = 1.0;
+const BUS_MAX_RIDES = 3;
+
+function toggleBusMode() {
+  if (document.getElementById('chk-bus').checked && !busLoaded && !busLoading) loadBusData();
+}
+
+function loadBusData() {
+  busLoading = true;
+  fetch('bus_compact.json').then(r => r.json()).then(d => {
+    busLoading = false; busLoaded = true;
+    buildBusGraph(d);
+    document.getElementById('chk-bus').nextSibling.textContent = ' 都営バスを含む（' + d.s.length + '停留所読込済）';
+  }).catch(() => { busLoading = false; alert('バスデータの読み込みに失敗'); });
+}
+
+function buildBusGraph(d) {
+  const base = S.length;
+  const busId = new Map();
+
+  for (const [name, lat, lon] of d.s) {
+    const id = S.length;
+    S.push([id, name, 'BUS']);
+    adj.push([]);
+    STATION_COORDS[id] = [lat, lon];
+    grp.push(gid++);
+    busId.set(name, id);
+  }
+
+  // Bus-bus edges
+  for (const [a, b] of d.e) {
+    const ai = busId.get(a), bi = busId.get(b);
+    if (ai === undefined || bi === undefined) continue;
+    const ac = STATION_COORDS[ai], bc = STATION_COORDS[bi];
+    const dY = (ac[0]-bc[0])*111, dX = (ac[1]-bc[1])*111*Math.cos(ac[0]*Math.PI/180);
+    const w = Math.max(Math.round(Math.sqrt(dX*dX+dY*dY)*10)/10, 0.1);
+    adj[ai].push({to:bi,w}); adj[bi].push({to:ai,w});
+  }
+
+  // Connect bus stops ↔ nearby train stations (from pre-computed connections)
+  for (const [bName, tName] of d.c) {
+    const bi = busId.get(bName);
+    if (bi === undefined) continue;
+    const tIds = nameToIds[tName];
+    if (!tIds) continue;
+    for (const ti of tIds) {
+      adj[bi].push({to:ti, w:BUS_TRANSFER_WEIGHT});
+      adj[ti].push({to:bi, w:BUS_TRANSFER_WEIGHT});
+      grp[bi] = grp[ti]; // same station complex
+    }
+  }
+
+  // Same-name direct connections (bus stop name === train station name)
+  for (const [name] of d.s) {
+    const bi = busId.get(name);
+    const tIds = nameToIds[name];
+    if (!tIds || bi === undefined) continue;
+    for (const ti of tIds) {
+      if (!adj[bi].some(e => e.to === ti)) {
+        adj[bi].push({to:ti, w:0.5}); adj[ti].push({to:bi, w:0.5});
+        grp[bi] = grp[ti];
+      }
+    }
+  }
+
+  // Register in nameToIds
+  for (const [name, id] of busId) {
+    if (!nameToIds[name]) nameToIds[name] = [];
+    nameToIds[name].push(id);
+  }
+}
+
+function countBusRides(path) {
+  let rides = 0; let onBus = false;
+  for (const id of path) {
+    if (S[id][2] === 'BUS') { if (!onBus) { rides++; onBus = true; } }
+    else { onBus = false; }
+  }
+  return rides;
+}
 
 // === MIN-HEAP ===
 function hPush(h, e) { h.push(e); let i=h.length-1; while(i>0){const p=(i-1)>>1;if(h[p][0]<=h[i][0])break;[h[p],h[i]]=[h[i],h[p]];i=p;} }
@@ -1248,13 +1335,20 @@ function hasPassthroughTransfer(path) {
   }
   return false;
 }
-const COMPANY_COST = 2; // small search penalty for switching to a paid operator
-const TOEI_CROSS_COST = 0.1; // near-zero penalty for switches involving Toei (free fare)
-const INTRA_FAMILY_COST = 0.1; // near-zero penalty for switching lines within same family
+const COMPANY_COST = 2;
+const TOEI_CROSS_COST = 0.1;
+const BUS_CROSS_COST = 5; // バス乗換は重い（遅い・不便）
+const INTRA_FAMILY_COST = 0.1;
 function companyCost(opA, opB) {
   if (opA === opB) return 0;
+  const busInvolved = (S[0] && (opA === 'toei' && opB === 'toei')); // both toei but one is bus
   if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
   return COMPANY_COST;
+}
+function transferCostFor(u, v) {
+  const a = S[u][2], b = S[v][2];
+  if (a === 'BUS' || b === 'BUS') return BUS_CROSS_COST;
+  return companyCost(operatorOf(a), operatorOf(b));
 }
 // 乗換エッジ判定: 同一駅(grp)で路線コードが変わる0距離移動 = 列車乗り換え
 const THROUGH_PAIRS = new Set(["JE|JM","JM|JE"]);
@@ -1437,7 +1531,7 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
       if (w === 0) fw = 0.3; // 乗換コスト（初乗り重複の近似、無駄な乗換を抑制）
       else {
         const op = operatorOf(S[u][2]);
-        fw = (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
+        fw = (S[u][2] === 'BUS') ? w * 3 : (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
       }
       if (jitter) fw *= (1 + (Math.random() * 2 - 1) * jitter);
       const nd = d + fw;
@@ -1533,7 +1627,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
   const searchMs = Math.round(performance.now() - t0);
 
   // 素通り乗換を除外し、空・自明な経路も弾く
-  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path) && !hasLoopback(r.path));
+  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path) && !hasLoopback(r.path) && countBusRides(r.path) <= BUS_MAX_RIDES);
 
   // Enrich with metadata
   for (const r of filtered) {
@@ -1553,7 +1647,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
       }
     }
     r.cross = paidCross + toeiCross;
-    r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3;
+    r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3 + countBusRides(r.path) * 5;
   }
 
   // Dedupe
@@ -2038,6 +2132,11 @@ function getViaNames() {
 }
 
 function calculate() {
+  if (document.getElementById('chk-bus').checked && !busLoaded) {
+    loadBusData();
+    setTimeout(calculate, 500);
+    return;
+  }
   const fromName = document.getElementById("from").value.trim();
   const toName = document.getElementById("to").value.trim();
   const viaNames = getViaNames();
@@ -2139,12 +2238,12 @@ function calculate() {
           }
         }
         r.cross = paidCross + toeiCross;
-        r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3;
+        r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3 + countBusRides(r.path) * 5;
       }
       // dedup by shape+dist+transfers
       const byKey = new Map();
       for (const r of merged) {
-        if (hasPassthroughTransfer(r.path) || hasLoopback(r.path)) continue;
+        if (hasPassthroughTransfer(r.path) || hasLoopback(r.path) || countBusRides(r.path) > BUS_MAX_RIDES) continue;
         const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
         const prev = byKey.get(key);
         if (!prev || r.stops < prev.stops) byKey.set(key, r);
