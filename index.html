@@ -1241,15 +1241,235 @@ const CROSS_TRANSFERS = [
 ];
 
 // === TOBU RAILWAY DATA (from saved Wikipedia station tables) ===
-const TOBU_STATION_IDS = {};
+const TOBU_STATION_IDS = Object.freeze({
+  "TC|曳舟": 956,
+  "TC|小村井": 957,
+  "TC|東あずま": 958,
+  "TC|亀戸水神": 959,
+  "TC|亀戸": 960,
+  "TS|浅草": 961,
+  "TS|とうきょうスカイツリー": 962,
+  "TS|押上": 963,
+  "TS|曳舟": 964,
+  "TS|東向島": 965,
+  "TS|鐘ヶ淵": 966,
+  "TS|堀切": 967,
+  "TS|牛田": 968,
+  "TS|北千住": 969,
+  "TS|小菅": 970,
+  "TS|五反野": 971,
+  "TS|梅島": 972,
+  "TS|西新井": 973,
+  "TS|竹ノ塚": 974,
+  "TS|谷塚": 975,
+  "TS|草加": 976,
+  "TS|獨協大学前": 977,
+  "TS|新田": 978,
+  "TS|蒲生": 979,
+  "TS|新越谷": 980,
+  "TS|越谷": 981,
+  "TS|北越谷": 982,
+  "TS|大袋": 983,
+  "TS|せんげん台": 984,
+  "TS|武里": 985,
+  "TS|一ノ割": 986,
+  "TS|春日部": 987,
+  "TS|北春日部": 988,
+  "TS|姫宮": 989,
+  "TS|東武動物公園": 990,
+  "TS|和戸": 991,
+  "TS|久喜": 992,
+  "TS|鷲宮": 993,
+  "TS|花崎": 994,
+  "TS|加須": 995,
+  "TS|南羽生": 996,
+  "TS|羽生": 997,
+  "TS|川俣": 998,
+  "TS|茂林寺前": 999,
+  "TS|館林": 1000,
+  "TS|多々良": 1001,
+  "TS|県": 1002,
+  "TS|福居": 1003,
+  "TS|東武和泉": 1004,
+  "TS|足利市": 1005,
+  "TS|野州山辺": 1006,
+  "TS|韮川": 1007,
+  "TS|太田": 1008,
+  "TS|細谷": 1009,
+  "TS|木崎": 1010,
+  "TS|世良田": 1011,
+  "TS|境町": 1012,
+  "TS|剛志": 1013,
+  "TS|新伊勢崎": 1014,
+  "TS|伊勢崎": 1015,
+  "TR|館林": 1016,
+  "TR|渡瀬": 1017,
+  "TR|田島": 1018,
+  "TR|佐野市": 1019,
+  "TR|佐野": 1020,
+  "TR|堀米": 1021,
+  "TR|吉水": 1022,
+  "TR|田沼": 1023,
+  "TR|多田": 1024,
+  "TR|葛生": 1025,
+  "TDS|西新井": 1026,
+  "TDS|大師前": 1027,
+  "TU|新栃木": 1028,
+  "TU|野州平川": 1029,
+  "TU|野州大塚": 1030,
+  "TU|壬生": 1031,
+  "TU|国谷": 1032,
+  "TU|おもちゃのまち": 1033,
+  "TU|安塚": 1034,
+  "TU|西川田": 1035,
+  "TU|江曽島": 1036,
+  "TU|南宇都宮": 1037,
+  "TU|東武宇都宮": 1038,
+  "TK|館林": 1039,
+  "TK|成島": 1040,
+  "TK|本中野": 1041,
+  "TK|篠塚": 1042,
+  "TK|東小泉": 1043,
+  "TK|小泉町": 1044,
+  "TK|西小泉": 1045,
+  "TK|竜舞": 1046,
+  "TK|太田": 1047,
+  "TN|東武動物公園": 1048,
+  "TN|杉戸高野台": 1049,
+  "TN|幸手": 1050,
+  "TN|南栗橋": 1051,
+  "TN|栗橋": 1052,
+  "TN|新古河": 1053,
+  "TN|柳生": 1054,
+  "TN|板倉東洋大前": 1055,
+  "TN|藤岡": 1056,
+  "TN|静和": 1057,
+  "TN|新大平下": 1058,
+  "TN|栃木": 1059,
+  "TN|新栃木": 1060,
+  "TN|合戦場": 1061,
+  "TN|家中": 1062,
+  "TN|東武金崎": 1063,
+  "TN|楡木": 1064,
+  "TN|樅山": 1065,
+  "TN|新鹿沼": 1066,
+  "TN|北鹿沼": 1067,
+  "TN|板荷": 1068,
+  "TN|下小代": 1069,
+  "TN|明神": 1070,
+  "TN|下今市": 1071,
+  "TN|上今市": 1072,
+  "TN|東武日光": 1073,
+  "TJ|池袋": 1074,
+  "TJ|北池袋": 1075,
+  "TJ|下板橋": 1076,
+  "TJ|大山": 1077,
+  "TJ|中板橋": 1078,
+  "TJ|ときわ台": 1079,
+  "TJ|上板橋": 1080,
+  "TJ|東武練馬": 1081,
+  "TJ|下赤塚": 1082,
+  "TJ|成増": 1083,
+  "TJ|和光市": 1084,
+  "TJ|朝霞": 1085,
+  "TJ|朝霞台": 1086,
+  "TJ|志木": 1087,
+  "TJ|柳瀬川": 1088,
+  "TJ|みずほ台": 1089,
+  "TJ|鶴瀬": 1090,
+  "TJ|ふじみ野": 1091,
+  "TJ|上福岡": 1092,
+  "TJ|新河岸": 1093,
+  "TJ|川越": 1094,
+  "TJ|川越市": 1095,
+  "TJ|霞ヶ関": 1096,
+  "TJ|鶴ヶ島": 1097,
+  "TJ|若葉": 1098,
+  "TJ|坂戸": 1099,
+  "TJ|北坂戸": 1100,
+  "TJ|高坂": 1101,
+  "TJ|東松山": 1102,
+  "TJ|森林公園": 1103,
+  "TJ|つきのわ": 1104,
+  "TJ|武蔵嵐山": 1105,
+  "TJ|小川町(東武)": 1106,
+  "TJ|東武竹沢": 1107,
+  "TJ|みなみ寄居": 1108,
+  "TJ|男衾": 1109,
+  "TJ|鉢形": 1110,
+  "TJ|玉淀": 1111,
+  "TJ|寄居": 1112,
+  "TKR|太田": 1113,
+  "TKR|三枚橋": 1114,
+  "TKR|治良門橋": 1115,
+  "TKR|藪塚": 1116,
+  "TKR|阿左美": 1117,
+  "TKR|新桐生": 1118,
+  "TKR|相老": 1119,
+  "TKR|赤城": 1120,
+  "TV|坂戸": 1121,
+  "TV|一本松": 1122,
+  "TV|西大家": 1123,
+  "TV|川角": 1124,
+  "TV|武州長瀬": 1125,
+  "TV|東毛呂": 1126,
+  "TV|武州唐沢": 1127,
+  "TV|越生": 1128,
+  "TP|大宮": 1129,
+  "TP|北大宮": 1130,
+  "TP|大宮公園": 1131,
+  "TP|大和田": 1132,
+  "TP|七里": 1133,
+  "TP|岩槻": 1134,
+  "TP|東岩槻": 1135,
+  "TP|豊春": 1136,
+  "TP|八木崎": 1137,
+  "TP|春日部": 1138,
+  "TP|藤の牛島": 1139,
+  "TP|南桜井": 1140,
+  "TP|川間": 1141,
+  "TP|七光台": 1142,
+  "TP|清水公園": 1143,
+  "TP|愛宕": 1144,
+  "TP|野田市": 1145,
+  "TP|梅郷": 1146,
+  "TP|運河": 1147,
+  "TP|江戸川台": 1148,
+  "TP|初石": 1149,
+  "TP|流山おおたかの森": 1150,
+  "TP|豊四季": 1151,
+  "TP|柏": 1152,
+  "TP|新柏": 1153,
+  "TP|増尾": 1154,
+  "TP|逆井": 1155,
+  "TP|高柳": 1156,
+  "TP|六実": 1157,
+  "TP|新鎌ヶ谷": 1158,
+  "TP|鎌ヶ谷": 1159,
+  "TP|馬込沢": 1160,
+  "TP|塚田": 1161,
+  "TP|新船橋": 1162,
+  "TP|船橋": 1163,
+  "TG|下今市": 1164,
+  "TG|大谷向": 1165,
+  "TG|大桑": 1166,
+  "TG|新高徳": 1167,
+  "TG|小佐越": 1168,
+  "TG|東武ワールドスクウェア": 1169,
+  "TG|鬼怒川温泉": 1170,
+  "TG|鬼怒川公園": 1171,
+  "TG|新藤原": 1172
+});
 function tobuKey(code, name) { return code + "|" + name; }
 function getTobuId(code, name) { return TOBU_STATION_IDS[tobuKey(code, name)]; }
 function addTobuRoute(code, rows) {
   let prev = null;
   for (const [name, distFromPrev] of rows) {
     const key = tobuKey(code, name);
-    let id = TOBU_STATION_IDS[key];
-    if (id == null) { id = S.length; TOBU_STATION_IDS[key] = id; S.push([id, name, code]); }
+    const id = TOBU_STATION_IDS[key];
+    if (id == null) throw new Error("Missing Tobu station ID: " + key);
+    if (!S[id]) S[id] = [id, name, code];
+    else if (S[id][0] !== id || S[id][1] !== name || S[id][2] !== code) throw new Error("Tobu station ID mismatch: " + key);
     if (prev != null && distFromPrev != null) EDGES.push([prev, id, distFromPrev]);
     prev = id;
   }
@@ -1279,15 +1499,123 @@ CROSS_TRANSFERS.push([getTobuId("TJ", "\u4e0b\u8d64\u585a"), 114]); // Shimo-aka
 
 
 // === SEIBU RAILWAY DATA (station order from Wikipedia, distances from unchin20260314.pdf) ===
-const SEIBU_STATION_IDS = {};
+const SEIBU_STATION_IDS = Object.freeze({
+  "SI|池袋": 1173,
+  "SI|椎名町": 1174,
+  "SI|東長崎": 1175,
+  "SI|江古田": 1176,
+  "SI|桜台": 1177,
+  "SI|練馬": 1178,
+  "SI|中村橋": 1179,
+  "SI|富士見台": 1180,
+  "SI|練馬高野台": 1181,
+  "SI|石神井公園": 1182,
+  "SI|大泉学園": 1183,
+  "SI|保谷": 1184,
+  "SI|ひばりヶ丘": 1185,
+  "SI|東久留米": 1186,
+  "SI|清瀬": 1187,
+  "SI|秋津": 1188,
+  "SI|所沢": 1189,
+  "SI|西所沢": 1190,
+  "SI|小手指": 1191,
+  "SI|狭山ヶ丘": 1192,
+  "SI|武蔵藤沢": 1193,
+  "SI|稲荷山公園": 1194,
+  "SI|入間市": 1195,
+  "SI|仏子": 1196,
+  "SI|元加治": 1197,
+  "SI|飯能": 1198,
+  "SI|東飯能": 1199,
+  "SI|高麗": 1200,
+  "SI|武蔵横手": 1201,
+  "SI|東吾野": 1202,
+  "SI|吾野": 1203,
+  "SC|吾野": 1204,
+  "SC|西吾野": 1205,
+  "SC|正丸": 1206,
+  "SC|芦ヶ久保": 1207,
+  "SC|横瀬": 1208,
+  "SC|西武秩父": 1209,
+  "SYU|小竹向原": 1210,
+  "SYU|新桜台": 1211,
+  "SYU|練馬": 1212,
+  "STO|練馬": 1213,
+  "STO|豊島園": 1214,
+  "SSA|西所沢": 1215,
+  "SSA|下山口": 1216,
+  "SSA|西武球場前": 1217,
+  "SS|西武新宿": 1218,
+  "SS|高田馬場": 1219,
+  "SS|下落合": 1220,
+  "SS|中井": 1221,
+  "SS|新井薬師前": 1222,
+  "SS|沼袋": 1223,
+  "SS|野方": 1224,
+  "SS|都立家政": 1225,
+  "SS|鷺ノ宮": 1226,
+  "SS|下井草": 1227,
+  "SS|井荻": 1228,
+  "SS|上井草": 1229,
+  "SS|上石神井": 1230,
+  "SS|武蔵関": 1231,
+  "SS|東伏見": 1232,
+  "SS|西武柳沢": 1233,
+  "SS|田無": 1234,
+  "SS|花小金井": 1235,
+  "SS|小平": 1236,
+  "SS|久米川": 1237,
+  "SS|東村山": 1238,
+  "SS|所沢": 1239,
+  "SS|航空公園": 1240,
+  "SS|新所沢": 1241,
+  "SS|入曽": 1242,
+  "SS|狭山市": 1243,
+  "SS|新狭山": 1244,
+  "SS|南大塚": 1245,
+  "SS|本川越": 1246,
+  "SB|小平": 1247,
+  "SB|萩山": 1248,
+  "SB|小川": 1249,
+  "SB|東大和市": 1250,
+  "SB|玉川上水": 1251,
+  "SB|武蔵砂川": 1252,
+  "SB|西武立川": 1253,
+  "SB|拝島": 1254,
+  "ST|国分寺": 1255,
+  "ST|一橋学園": 1256,
+  "ST|青梅街道": 1257,
+  "ST|萩山": 1258,
+  "ST|八坂": 1259,
+  "ST|武蔵大和": 1260,
+  "ST|多摩湖": 1261,
+  "SK|国分寺": 1262,
+  "SK|恋ヶ窪": 1263,
+  "SK|鷹の台": 1264,
+  "SK|小川": 1265,
+  "SK|東村山": 1266,
+  "SSP|東村山": 1267,
+  "SSP|西武園": 1268,
+  "SW|武蔵境": 1269,
+  "SW|新小金井": 1270,
+  "SW|多磨": 1271,
+  "SW|白糸台": 1272,
+  "SW|競艇場前": 1273,
+  "SW|是政": 1274,
+  "SL|多摩湖": 1275,
+  "SL|西武園ゆうえんち": 1276,
+  "SL|西武球場前": 1277
+});
 function seibuKey(code, name) { return code + "|" + name; }
 function getSeibuId(code, name) { return SEIBU_STATION_IDS[seibuKey(code, name)]; }
 function addSeibuRoute(code, rows) {
   let prev = null;
   for (const [name, distFromPrev] of rows) {
     const key = seibuKey(code, name);
-    let id = SEIBU_STATION_IDS[key];
-    if (id == null) { id = S.length; SEIBU_STATION_IDS[key] = id; S.push([id, name, code]); }
+    const id = SEIBU_STATION_IDS[key];
+    if (id == null) throw new Error("Missing Seibu station ID: " + key);
+    if (!S[id]) S[id] = [id, name, code];
+    else if (S[id][0] !== id || S[id][1] !== name || S[id][2] !== code) throw new Error("Seibu station ID mismatch: " + key);
     if (prev != null && distFromPrev != null) EDGES.push([prev, id, distFromPrev]);
     prev = id;
   }
@@ -1311,15 +1639,37 @@ CROSS_TRANSFERS.push([getSeibuId("SS", "\u672c\u5ddd\u8d8a"), getTobuId("TJ", "\
 
 
 // === TAMA MONORAIL DATA (station order/distances from saved Wikipedia table) ===
-const TAMA_STATION_IDS = {};
+const TAMA_STATION_IDS = Object.freeze({
+  "TT|上北台": 1278,
+  "TT|桜街道": 1279,
+  "TT|玉川上水": 1280,
+  "TT|砂川七番": 1281,
+  "TT|泉体育館": 1282,
+  "TT|立飛": 1283,
+  "TT|高松": 1284,
+  "TT|立川北": 1285,
+  "TT|立川南": 1286,
+  "TT|柴崎体育館": 1287,
+  "TT|甲州街道": 1288,
+  "TT|万願寺": 1289,
+  "TT|高幡不動": 1290,
+  "TT|程久保": 1291,
+  "TT|多摩動物公園": 1292,
+  "TT|中央大学・明星大学": 1293,
+  "TT|大塚・帝京大学": 1294,
+  "TT|松が谷": 1295,
+  "TT|多摩センター": 1296
+});
 function tamaKey(name) { return "TT|" + name; }
 function getTamaId(name) { return TAMA_STATION_IDS[tamaKey(name)]; }
 function addTamaRoute(rows) {
   let prev = null;
   for (const [name, distFromPrev] of rows) {
     const key = tamaKey(name);
-    let id = TAMA_STATION_IDS[key];
-    if (id == null) { id = S.length; TAMA_STATION_IDS[key] = id; S.push([id, name, "TT"]); }
+    const id = TAMA_STATION_IDS[key];
+    if (id == null) throw new Error("Missing Tama station ID: " + key);
+    if (!S[id]) S[id] = [id, name, "TT"];
+    else if (S[id][0] !== id || S[id][1] !== name || S[id][2] !== "TT") throw new Error("Tama station ID mismatch: " + key);
     if (prev != null && distFromPrev != null) EDGES.push([prev, id, distFromPrev]);
     prev = id;
   }
@@ -1330,15 +1680,31 @@ CROSS_TRANSFERS.push([getTamaId("\u7acb\u5ddd\u5317"), 334], [getTamaId("\u7acb\
 CROSS_TRANSFERS.push([getTamaId("\u7acb\u5ddd\u5357"), 334], [getTamaId("\u7acb\u5ddd\u5357"), 631], [getTamaId("\u7acb\u5ddd\u5357"), 671]);
 CROSS_TRANSFERS.push([getTamaId("\u591a\u6469\u30bb\u30f3\u30bf\u30fc"), 910]);
 // === KEISEI BRANCH LINE DATA (station order/distances from saved Wikipedia pages) ===
-const KEISEI_BRANCH_IDS = {};
+const KEISEI_BRANCH_IDS = Object.freeze({
+  "KC|京成津田沼": 1297,
+  "KC|京成幕張本郷": 1298,
+  "KC|京成幕張": 1299,
+  "KC|検見川": 1300,
+  "KC|京成稲毛": 1301,
+  "KC|みどり台": 1302,
+  "KC|西登戸": 1303,
+  "KC|新千葉": 1304,
+  "KC|京成千葉": 1305,
+  "KC|千葉中央": 1306,
+  "KG|京成高砂": 1307,
+  "KG|柴又": 1308,
+  "KG|京成金町": 1309
+});
 function keiseiBranchKey(code, name) { return code + "|" + name; }
 function getKeiseiBranchId(code, name) { return KEISEI_BRANCH_IDS[keiseiBranchKey(code, name)]; }
 function addKeiseiBranchRoute(code, rows) {
   let prev = null;
   for (const [name, distFromPrev] of rows) {
     const key = keiseiBranchKey(code, name);
-    let id = KEISEI_BRANCH_IDS[key];
-    if (id == null) { id = S.length; KEISEI_BRANCH_IDS[key] = id; S.push([id, name, code]); }
+    const id = KEISEI_BRANCH_IDS[key];
+    if (id == null) throw new Error("Missing Keisei branch station ID: " + key);
+    if (!S[id]) S[id] = [id, name, code];
+    else if (S[id][0] !== id || S[id][1] !== name || S[id][2] !== code) throw new Error("Keisei branch station ID mismatch: " + key);
     if (prev != null && distFromPrev != null) EDGES.push([prev, id, distFromPrev]);
     prev = id;
   }
@@ -3275,9 +3641,15 @@ function buildRouteHtml(path) {
 }
 
 function drawRouteMap(canvas, path) {
+  // 同一grp(乗換駅)は同じ座標に統一し、描画のズレを防ぐ
+  const grpCoord = {};
+  for (const id of path) {
+    const g = grp[id], c = STATION_COORDS[id];
+    if (c && !grpCoord[g]) grpCoord[g] = c;
+  }
   const pts = [];
   for (const id of path) {
-    const c = STATION_COORDS[id];
+    const c = grpCoord[grp[id]] || STATION_COORDS[id];
     if (c) pts.push({ id, lat: c[0], lon: c[1], line: S[id][2] });
   }
   if (pts.length < 2) return;
