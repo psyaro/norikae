@@ -198,11 +198,6 @@ h1 {
 }
 .route-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
 .route-card.best { border: 1.5px solid var(--primary); background: #fbfdff; }
-.route-card.best::after {
-  content: '最安値'; position: absolute; top: 16px; right: 16px; background: var(--accent);
-  color: #fff; font-size: 0.65rem; font-weight: 700; padding: 3px 8px;
-  border-radius: 12px;
-}
 .route-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .route-num {
   font-family: 'Outfit', sans-serif; display: inline-flex; align-items: center; justify-content: center;
@@ -1394,19 +1389,19 @@ function getTXFare(km) {
 }
 
 // 京成運賃（空港駅・千原線を除く普通旅客運賃）
+// 京成: BF加算後のIC運賃 → 半額切り上げ
 const KEISEI_FARE_ZONES = [
-  {max:3,ticket:140},{max:5,ticket:160},{max:10,ticket:190},
-  {max:15,ticket:270},{max:20,ticket:330},{max:25,ticket:380},
-  {max:30,ticket:440},{max:35,ticket:500},{max:40,ticket:550},
-  {max:45,ticket:610},{max:50,ticket:680},{max:55,ticket:740},
-  {max:60,ticket:790},{max:65,ticket:850},{max:70,ticket:910},
+  {max:3,ic:146},{max:5,ic:167},{max:10,ic:199},
+  {max:15,ic:272},{max:20,ic:335},{max:25,ic:387},
+  {max:30,ic:450},{max:35,ic:502},{max:40,ic:555},
+  {max:45,ic:618},{max:50,ic:681},{max:55,ic:743},
+  {max:60,ic:796},{max:65,ic:859},{max:70,ic:912},
 ];
-// 京成: 運賃+バリアフリー10円(割引前) → 半額切り上げ
 function getKeiseiFare(km) {
-  for (const z of KEISEI_FARE_ZONES) {
-    if (km <= z.max) { const b=z.ticket+10; return { ticket: Math.ceil(b/2/10)*10, ic: Math.ceil(b/2) }; }
-  }
-  const b=910+10; return { ticket: Math.ceil(b/2/10)*10, ic: Math.ceil(b/2) };
+  let ic = KEISEI_FARE_ZONES[KEISEI_FARE_ZONES.length-1].ic;
+  for (const z of KEISEI_FARE_ZONES) { if (km <= z.max) { ic = z.ic; break; } }
+  const ticket = Math.ceil(ic / 10) * 10;
+  return { ticket: Math.ceil(ticket/2/10)*10, ic: Math.ceil(ic/2) };
 }
 
 // 京王運賃（通常運賃、BFなし、障がい者割引なし）
