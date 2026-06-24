@@ -1387,12 +1387,9 @@ function getFarNote(nodeA, nodeB) {
 // === FARE CALCULATION (Metro + JR sections; Toei is free) ===
 // 大回り乗車特例: JR大都市近郊区間内の最短営業キロで運賃計算。
 // JRサブグラフ(乗換0距離辺を含む)で始終点間の最短距離をキャッシュ付きで求める。
-const jrShortestCache = new Map();
 function jrShortestDist(startId, endId) {
   const sg = grp[startId], eg = grp[endId];
   if (sg === eg) return 0;
-  const ck = sg * 10000 + eg;
-  if (jrShortestCache.has(ck)) return jrShortestCache.get(ck);
   const dist = new Float64Array(N).fill(Infinity);
   const heap = [];
   for (let n = 0; n < N; n++) { if (grp[n] === sg && JR_LINES.has(S[n][2])) { dist[n] = 0; hPush(heap, [0, n]); } }
@@ -1407,9 +1404,7 @@ function jrShortestDist(startId, endId) {
   }
   let best = Infinity;
   for (let n = 0; n < N; n++) { if (grp[n] === eg && dist[n] < best) best = dist[n]; }
-  const result = best === Infinity ? -1 : Math.round(best * 10) / 10;
-  jrShortestCache.set(ck, result);
-  return result;
+  return best === Infinity ? -1 : Math.round(best * 10) / 10;
 }
 
 function calcRouteFare(path) {
