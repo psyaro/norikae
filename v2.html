@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>東京障がい者割引乗り換え案内 (v2 Yen's)</title>
+<title>東京障がい者割引乗り換え案内 (v2 RAPTOR+Plateau)</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0089c7">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -163,7 +163,7 @@ optgroup { font-weight: 700; }
 <div id="page-search" class="page active">
 <div class="container">
   <h1>東京障がい者割引乗り換え探索</h1>
-  <p class="subtitle">v2: Yen's K-Shortest Paths。メトロ・JRは通常料金、都営は無料、TX・京成は半額。</p>
+  <p class="subtitle">v2: RAPTOR風ラウンド + Plateau法による経路探索。</p>
   <div class="card">
     <div class="input-group">
       <label>出発路線（任意）</label>
@@ -887,9 +887,25 @@ for (let i = 0; i < N; i++) { const r = ufFind(i); if (!(r in grpMap)) grpMap[r]
 function hPush(h, e) { h.push(e); let i=h.length-1; while(i>0){const p=(i-1)>>1;if(h[p][0]<=h[i][0])break;[h[p],h[i]]=[h[i],h[p]];i=p;} }
 function hPop(h) { const t=h[0];const l=h.pop();if(h.length>0){h[0]=l;let i=0;while(true){let s=i,a=2*i+1,b=2*i+2;if(a<h.length&&h[a][0]<h[s][0])s=a;if(b<h.length&&h[b][0]<h[s][0])s=b;if(s===i)break;[h[i],h[s]]=[h[s],h[i]];i=s;}}return t; }
 
-// === ROUTE FINDING (Yen's K-Shortest Paths) ===
-function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
+// === ROUTE FINDING (penalty-based iterative Dijkstra) ===
+function routeSig(path) {
+  const segs = [];
+  let curLine = S[path[0]][2], startG = grp[path[0]], endG = startG;
+  for (let i = 1; i < path.length; i++) {
+    const line = S[path[i]][2], g = grp[path[i]];
+    if (line !== curLine) {
+      if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+      curLine = line; startG = g;
+    }
+    endG = g;
+  }
+  if (startG !== endG) segs.push(curLine + ':' + startG + '-' + endG);
+  return segs.join('>');
+}
 
+// dedupe用: 路線ファミリー区間の列（どの系統でどの駅間を乗るか）。
+// 中央線快速と中央・総武線各停のように停車駅が違っても、
+// 同じ系統で同じ駅間を移動するなら同一shapeとみなす。
 function routeShape(path) {
   const segs = [];
   let curFam = lineFamily(S[path[0]][2]), startG = grp[path[0]], endG = startG;
@@ -905,49 +921,42 @@ function routeShape(path) {
   return segs.join('>');
 }
 
-// Dijkstra with transfer cost + excluded nodes/edges for Yen's algorithm
-// Returns {distance (real km), searchDist (with penalties), path}
-function dijkstra(srcSet, dstSet, excludedNodes, excludedEdges, tc) {
-  tc = tc || 0;
-  const dist = new Float64Array(N).fill(Infinity);
-  const real = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
-  const heap = [];
-  for (const s of srcSet) {
-    if (excludedNodes && excludedNodes.has(s)) continue;
-    dist[s] = 0; real[s] = 0; hPush(heap, [0, s]);
-  }
-  while (heap.length > 0) {
-    const [d, u] = hPop(heap);
-    if (d > dist[u]) continue;
-    for (const {to: v, w} of adj[u]) {
-      if (excludedNodes && excludedNodes.has(v)) continue;
-      if (excludedEdges) {
-        const ek = Math.min(u,v) * 1000 + Math.max(u,v);
-        if (excludedEdges.has(ek)) continue;
-      }
-      let pen = 0;
-      if (w === 0 && lineFamily(S[u][2]) !== lineFamily(S[v][2])) pen = tc;
-      const nd = d + w + pen;
-      if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
+// 同一路線系統の判定（JC/JBは中央線系統として同一扱い）
+function lineFamily(code) { return JR_LINES.has(code) ? "JR" : code; }
+
+// 素通り乗換の検出: 乗換ハブで実乗車せず0距離乗換を2連続で跨ぐ経路を弾く。
+// 例: 小川町(S)→[乗らず]新御茶ノ水(C)→[乗らず]御茶ノ水(JR) は実質「小川町→御茶ノ水JRを徒歩」で遠い。
+// 異なる3系統を0距離だけで跨ぐ駅は素通りハブとみなす。
+function hasPassthroughTransfer(path) {
+  for (let i = 1; i < path.length - 1; i++) {
+    const prevTransfer = grp[path[i-1]] === grp[path[i]];
+    const nextTransfer = grp[path[i]] === grp[path[i+1]];
+    if (prevTransfer && nextTransfer) {
+      const fPrev = lineFamily(S[path[i-1]][2]), fCur = lineFamily(S[path[i]][2]), fNext = lineFamily(S[path[i+1]][2]);
+      if (fPrev !== fCur && fCur !== fNext) return true;
     }
   }
-  let bestD = Infinity, bestN = -1;
-  for (const d of dstSet) if (dist[d] < bestD) { bestD = dist[d]; bestN = d; }
-  if (bestN === -1) return null;
-  const same = [...dstSet].filter(d => dist[d] === bestD);
-  if (same.length > 1) for (const d of same) {
-    if (prev[d] >= 0 && S[prev[d]][2] === S[d][2]) { bestN = d; break; }
-  }
-  const path = []; let c = bestN; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
-  return { distance: Math.round(real[bestN] * 10) / 10, searchDist: Math.round(bestD * 10) / 10, path };
+  return false;
 }
+const COMPANY_COST = 2; // small search penalty for switching to a paid operator
+const TOEI_CROSS_COST = 0.1; // near-zero penalty for switches involving Toei (free fare)
+const INTRA_FAMILY_COST = 0.1; // near-zero penalty for switching lines within same family
+function companyCost(opA, opB) {
+  if (opA === opB) return 0;
+  if (opA === 'toei' || opB === 'toei') return TOEI_CROSS_COST;
+  return COMPANY_COST;
+}
+// 乗換エッジ判定: 同一駅(grp)で路線コードが変わる0距離移動 = 列車乗り換え
+function isTransferEdge(u, v) { return grp[u] === grp[v] && S[u][2] !== S[v][2]; }
+function edgeWeight(u, v) { for (const e of adj[u]) if (e.to === v) return e.w; return Infinity; }
+function hasDirectEdge(a, b) { return adj[a].some(e => e.to === b); }
 
+// 経路の正規化: 先頭末尾の同一grp除去 + 直接エッジのある同一grpチェーンの中間除去
 function cleanPath(path) {
   while (path.length > 1 && grp[path[0]] === grp[path[1]]) path.shift();
   while (path.length > 1 && grp[path[path.length-1]] === grp[path[path.length-2]]) path.pop();
   for (let i = 1; i < path.length - 1; ) {
-    if (grp[path[i-1]] === grp[path[i]] && grp[path[i]] === grp[path[i+1]]) path.splice(i, 1);
+    if (grp[path[i-1]] === grp[path[i]] && grp[path[i]] === grp[path[i+1]] && hasDirectEdge(path[i-1], path[i+1])) path.splice(i, 1);
     else i++;
   }
   return path;
@@ -961,6 +970,118 @@ function quickTransfers(path) {
   return t;
 }
 
+// 純粋な距離Dijkstra（Plateau用）
+function plainDijkstra(srcSet) {
+  const dist = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const heap = [];
+  for (const s of srcSet) { dist[s] = 0; hPush(heap, [0, s]); }
+  while (heap.length > 0) {
+    const [d, u] = hPop(heap);
+    if (d > dist[u]) continue;
+    for (const { to: v, w } of adj[u]) {
+      const nd = d + w;
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; hPush(heap, [nd, v]); }
+    }
+  }
+  return { dist, prev };
+}
+
+// === RAPTOR風: ラウンド=乗換回数 ===
+// 状態(駅, 乗換回数k)のDijkstra。各kでの目的地最短距離を求め、
+// 「乗換が増えるほど距離が縮む」Pareto最適な経路を抽出する。
+function roundShortest(srcSet, dstSet, K) {
+  const labels = [], prev = [];
+  for (let k = 0; k <= K; k++) {
+    labels.push(new Float64Array(N).fill(Infinity));
+    prev.push(new Int32Array(N).fill(-1));
+  }
+  const heap = [];
+  for (const s of srcSet) { labels[0][s] = 0; hPush(heap, [0, s, 0]); }
+  while (heap.length > 0) {
+    const [d, u, k] = hPop(heap);
+    if (d > labels[k][u]) continue;
+    for (const { to: v, w } of adj[u]) {
+      let nk = k;
+      if (w === 0 && isTransferEdge(u, v)) nk = k + 1;
+      if (nk > K) continue;
+      const nd = d + w;
+      if (nd < labels[nk][v]) { labels[nk][v] = nd; prev[nk][v] = u; hPush(heap, [nd, v, nk]); }
+    }
+  }
+  const routes = [];
+  let best = Infinity;
+  for (let k = 0; k <= K; k++) {
+    let bd = Infinity, bn = -1;
+    for (const t of dstSet) if (labels[k][t] < bd) { bd = labels[k][t]; bn = t; }
+    if (bn === -1 || bd >= best - 1e-9) continue; // 乗換を増やしても縮まないなら不要
+    best = bd;
+    // 経路復元（kを追跡しながら遡る）
+    const path = []; let c = bn, ck = k;
+    while (c !== -1) {
+      path.push(c);
+      const p = prev[ck][c];
+      if (p !== -1 && isTransferEdge(p, c)) ck--;
+      c = p;
+    }
+    path.reverse();
+    routes.push({ distance: Math.round(bd * 10) / 10, path });
+  }
+  return routes;
+}
+
+// === Plateau法: 構造的に異なる代替経路 ===
+// 出発側・到着側の最短経路木で共有される連続区間(plateau)を見つけ、
+// 各plateauを通る経路を代替候補として生成する。
+function plateauRoutes(srcSet, dstSet, limit) {
+  const F = plainDijkstra(srcSet);
+  const B = plainDijkstra(dstSet); // 無向グラフなので逆向き最短も同じ構造
+  // forward最短木の辺集合
+  const fEdge = new Set();
+  for (let v = 0; v < N; v++) {
+    if (F.prev[v] >= 0) { const u = F.prev[v]; fEdge.add(Math.min(u,v) * 100000 + Math.max(u,v)); }
+  }
+  // 共有辺（forward木 ∩ backward木）でサブグラフを構築
+  const sharedAdj = new Map();
+  for (let v = 0; v < N; v++) {
+    if (B.prev[v] >= 0) {
+      const u = B.prev[v];
+      if (fEdge.has(Math.min(u,v) * 100000 + Math.max(u,v))) {
+        if (!sharedAdj.has(u)) sharedAdj.set(u, []);
+        if (!sharedAdj.has(v)) sharedAdj.set(v, []);
+        sharedAdj.get(u).push(v); sharedAdj.get(v).push(u);
+      }
+    }
+  }
+  // 連結成分(plateau)を抽出
+  const visited = new Set();
+  const plateaus = [];
+  for (const start of sharedAdj.keys()) {
+    if (visited.has(start)) continue;
+    const comp = []; const stack = [start]; visited.add(start);
+    while (stack.length) {
+      const x = stack.pop(); comp.push(x);
+      for (const y of sharedAdj.get(x)) if (!visited.has(y)) { visited.add(y); stack.push(y); }
+    }
+    plateaus.push({ comp, val: F.dist[comp[0]] + B.dist[comp[0]] });
+  }
+  // 最適経路長に近いplateauを優先
+  plateaus.sort((a, b) => a.val - b.val);
+  const result = [];
+  for (const pl of plateaus) {
+    if (result.length >= limit) break;
+    // tに最も近い端点bを選び、s→b→t を構成
+    let b = pl.comp[0];
+    for (const x of pl.comp) if (B.dist[x] < B.dist[b]) b = x;
+    if (B.dist[b] === Infinity || F.dist[b] === Infinity) continue;
+    const path = [];
+    let c = b; while (c !== -1) { path.push(c); c = F.prev[c]; } path.reverse();
+    let c2 = B.prev[b]; while (c2 !== -1) { path.push(c2); c2 = B.prev[c2]; }
+    result.push({ distance: Math.round((F.dist[b] + B.dist[b]) * 10) / 10, path });
+  }
+  return result;
+}
+
 function findKRoutes(fromName, toName) {
   const srcIds = nameToIds[fromName];
   const dstIds = nameToIds[toName];
@@ -971,90 +1092,24 @@ function findKRoutes(fromName, toName) {
   addCrossTransferIds(toName, dstSet);
 
   const t0 = performance.now();
-  const K_PER_TC = 50, TIMEOUT = 2000;
-  const TC_LEVELS = [0, 2, 5, 15];
+  const K = 6;          // 最大乗換回数（ラウンド数）
+  const PLATEAU_LIMIT = 120;
 
-  // --- Yen's K-Shortest Diverse Paths × multiple transfer costs ---
-  const allPaths = [];
-  const seenShapes = new Set();
+  // RAPTOR風: 乗換回数別の最短経路（主要候補）
+  const pool = roundShortest(srcSet, dstSet, K);
+  // Plateau法: 構造的に異なる代替経路
+  for (const r of plateauRoutes(srcSet, dstSet, PLATEAU_LIMIT)) pool.push(r);
 
-  function yenKShortest(tc, kTarget) {
-    const paths = [];
-    const candidates = [];
-    const seenKeys = new Set();
-
-    const first = dijkstra(srcSet, dstSet, null, null, tc);
-    if (!first) return;
-    cleanPath(first.path);
-    paths.push(first);
-    const s0 = routeShape(first.path) + '|' + first.distance.toFixed(1);
-    if (!seenShapes.has(s0)) { seenShapes.add(s0); allPaths.push(first); }
-
-    let diverseFound = 1, yenIdx = 0;
-    while (diverseFound < kTarget && performance.now() - t0 < TIMEOUT) {
-      if (yenIdx < paths.length) {
-        const prevPath = paths[yenIdx].path;
-        for (let i = 0; i < prevPath.length - 1; i++) {
-          if (performance.now() - t0 >= TIMEOUT) break;
-          const spurNode = prevPath[i];
-          const rootPath = prevPath.slice(0, i + 1);
-          const rootSearchDist = rootPath.length > 1
-            ? (() => { let d = 0; for (let j = 0; j < rootPath.length - 1; j++) { for (const e of adj[rootPath[j]]) { if (e.to === rootPath[j+1]) { d += e.w; break; } } } let pen = 0; for (let j = 1; j < rootPath.length; j++) { if (adj[rootPath[j-1]].find(e=>e.to===rootPath[j]&&e.w===0) && lineFamily(S[rootPath[j-1]][2]) !== lineFamily(S[rootPath[j]][2])) pen += tc; } return d + pen; })()
-            : 0;
-          const rootRealDist = rootPath.length > 1
-            ? (() => { let d = 0; for (let j = 0; j < rootPath.length - 1; j++) { for (const e of adj[rootPath[j]]) { if (e.to === rootPath[j+1]) { d += e.w; break; } } } return d; })()
-            : 0;
-
-          const excludedEdges = new Set();
-          for (const kp of paths) {
-            if (kp.path.length > i && kp.path.slice(0, i + 1).every((n, j) => n === rootPath[j])) {
-              const ek = Math.min(kp.path[i], kp.path[i + 1]) * 1000 + Math.max(kp.path[i], kp.path[i + 1]);
-              excludedEdges.add(ek);
-            }
-          }
-
-          const excludedNodes = new Set();
-          for (let j = 0; j < i; j++) excludedNodes.add(rootPath[j]);
-
-          const spur = dijkstra(new Set([spurNode]), dstSet, excludedNodes, excludedEdges, tc);
-          if (!spur) continue;
-
-          const totalPath = [...rootPath.slice(0, -1), ...spur.path];
-          const totalSearchDist = Math.round((rootSearchDist + spur.searchDist) * 10) / 10;
-          const totalDist = Math.round((rootRealDist + spur.distance) * 10) / 10;
-
-          const pathKey = totalPath.join(',');
-          if (seenKeys.has(pathKey)) continue;
-          seenKeys.add(pathKey);
-          candidates.push({ distance: totalDist, searchDist: totalSearchDist, path: totalPath });
-        }
-        yenIdx++;
-      }
-
-      if (candidates.length === 0) break;
-      candidates.sort((a, b) => a.searchDist - b.searchDist);
-      const next = candidates.shift();
-      cleanPath(next.path);
-      paths.push(next);
-
-      const shape = routeShape(next.path) + '|' + next.distance.toFixed(1);
-      if (!seenShapes.has(shape)) {
-        seenShapes.add(shape);
-        allPaths.push(next);
-        diverseFound++;
-      }
-    }
-  }
-
-  for (const tc of TC_LEVELS) {
-    if (performance.now() - t0 >= TIMEOUT) break;
-    yenKShortest(tc, K_PER_TC);
-  }
+  // 経路正規化
+  for (const r of pool) cleanPath(r.path);
 
   const searchMs = Math.round(performance.now() - t0);
 
-  // --- Enrich & Dedupe ---
-  for (const r of allPaths) {
+  // 素通り乗換を除外し、空・自明な経路も弾く
+  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path));
+
+  // Enrich with metadata
+  for (const r of filtered) {
     r.transfers = quickTransfers(r.path);
     const visited = new Set();
     for (const id of r.path) visited.add(grp[id]);
@@ -1071,12 +1126,12 @@ function findKRoutes(fromName, toName) {
       }
     }
     r.cross = paidCross + toeiCross;
-    r.score = r.distance + r.transfers * 1.5 + paidCross * 3 + toeiCross * 0.3;
+    r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3;
   }
 
-  // Dedupe by routeShape + distance + transfers
+  // Dedupe
   const byKey = new Map();
-  for (const r of allPaths) {
+  for (const r of filtered) {
     const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
     const prev = byKey.get(key);
     if (!prev || r.stops < prev.stops) byKey.set(key, r);
@@ -1095,8 +1150,7 @@ function findKRoutes(fromName, toName) {
 
   deduped.sort((a, b) => a.score - b.score);
   deduped.searchMs = searchMs;
-  deduped.rawCount = seenShapes.size;
-  deduped.diverseCount = allPaths.length;
+  deduped.rawCount = pool.length;
   return deduped;
 }
 
@@ -1368,7 +1422,7 @@ function showMoreRoutes() {
 function renderRoutes() {
   const resultEl = document.getElementById("result");
   const summaryEl = document.getElementById("result-summary");
-  const ms = lastRoutes.searchMs != null ? ' (' + lastRoutes.searchMs + 'ms / Yen ' + lastRoutes.rawCount + '件→多様' + (lastRoutes.diverseCount||'?') + '件)' : '';
+  const ms = lastRoutes.searchMs != null ? ' (' + lastRoutes.searchMs + 'ms / 探索' + lastRoutes.rawCount + '件)' : '';
   summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>' + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
   displayedSorted = [...lastRoutes];
   const cmp = {
@@ -1537,25 +1591,39 @@ function buildRouteHtml(path) {
       const first = uniq[0];
       const last = uniq[uniq.length - 1];
 
-      const skipThis = (mi === 0 && skipStart) || (mi > 0 && grp[first] === grp[mySubs[mi-1].stations[mySubs[mi-1].stations.length-1]]);
+      const skipThis = (mi > 0 && grp[first] === grp[mySubs[mi-1].stations[mySubs[mi-1].stations.length-1]]);
+      const isTransferStart = mi === 0 && skipStart;
 
       if (!skipThis) {
         html += '<div class="route-station">';
         html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-        html += '<div class="route-name">' + escHtml(S[first][1]);
-        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
-        if (si > 0 && mi === 0 && !skipStart) {
-          html += '<span class="route-transfer">乗換</span>';
+        html += '<div class="route-name">';
+        if (isTransferStart) {
           const prevSeg = famSegments[si-1];
           const prevLast = prevSeg.stations[prevSeg.stations.length-1];
+          const prevLastLine = S[prevLast][2];
+          const pc = LINES[prevLastLine].color;
+          html += escHtml(S[prevLast][1]);
+          html += '<span class="line-badge" style="background:' + pc + '">' + LINES[prevLastLine].name + '</span>';
+          html += '<span class="route-arrow" style="font-size:0.7rem;vertical-align:middle">→</span>';
+          html += escHtml(S[first][1]);
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+          html += '<span class="route-transfer">乗換</span>';
           const farNote = getFarNote(prevLast, first);
           if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
+        } else {
+          html += escHtml(S[first][1]);
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
         }
         html += '</div></div>';
       }
 
       if (uniq.length > 1) {
-        const midStations = uniq.slice(1, -1).map(id => escHtml(S[id][1]));
+        // Check if last station will be shown as transfer start of next segment
+        const isLastTransfer = si < famSegments.length - 1 && mi === mySubs.length - 1
+          && grp[last] === grp[famSegments[si+1].stations[0]];
+        const midEnd = isLastTransfer ? uniq.length - 1 : uniq.length - 1;
+        const midStations = uniq.slice(1, midEnd).map(id => escHtml(S[id][1]));
         html += '<div class="route-segment">';
         html += '<div class="route-segment-bar" style="background:' + c + '"></div>';
         html += '<div class="route-segment-info">';
@@ -1564,25 +1632,16 @@ function buildRouteHtml(path) {
         }
         html += '</div></div>';
 
-        html += '<div class="route-station">';
-        html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-        html += '<div class="route-name">' + escHtml(S[last][1]);
-        html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
-        html += '</div></div>';
+        if (!isLastTransfer) {
+          html += '<div class="route-station">';
+          html += '<div class="route-dot" style="border-color:' + c + '"></div>';
+          html += '<div class="route-name">' + escHtml(S[last][1]);
+          html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
+          html += '</div></div>';
+        }
       }
     }
 
-    if (si < famSegments.length - 1) {
-      const lastSub = mySubs[mySubs.length - 1];
-      const cc = LINES[lastSub.line].color;
-      const nextFam = famSegments[si+1];
-      const nextFirstLine = S[nextFam.stations[0]][2];
-      const nc = LINES[nextFirstLine].color;
-      html += '<div class="route-segment">';
-      html += '<div class="route-segment-bar" style="background:linear-gradient(' + cc + ',' + nc + ')"></div>';
-      html += '<div class="route-segment-info" style="color:#e67e00">⇅ 乗換</div>';
-      html += '</div>';
-    }
   }
   return html;
 }
@@ -1771,34 +1830,7 @@ function checkForUpdate() {
     btn.disabled = false;
   });
 }
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
-    swReg = reg;
-    document.getElementById('update-btn').disabled = false;
-    if (reg.waiting) {
-      setUpdateStatus('新しいバージョンがあります');
-      const btn = document.getElementById('update-btn');
-      btn.textContent = '今すぐ更新';
-      btn.onclick = () => { btn.disabled = true; setUpdateStatus('更新中…'); applyWaitingSW(); };
-    }
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      w.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) {
-          setUpdateStatus('新しいバージョンがあります');
-          const btn = document.getElementById('update-btn');
-          btn.textContent = '今すぐ更新';
-          btn.disabled = false;
-          btn.onclick = () => { btn.disabled = true; setUpdateStatus('更新中…'); applyWaitingSW(); };
-          if (confirm('新しいバージョンがあります。更新しますか？')) {
-            applyWaitingSW();
-          }
-        }
-      });
-    });
-  });
-  navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
-}
+// v2は実験版のためService Worker登録なし（本番sw.jsと干渉しないように）
 
 </script>
 </body>
