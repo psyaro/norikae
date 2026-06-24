@@ -1146,7 +1146,7 @@ const STATION_COORDS={0:[35.71074,139.79777],1:[35.70991,139.79035],2:[35.7114,1
 const HIDDEN_STATIONS = new Set([464, 465]); // 空港第2ビル, 成田空港
 
 // === BUILD GRAPH ===
-const N = S.length;
+let N = S.length;
 const adj = Array.from({ length: N }, () => []);
 
 function addEdge(u, v, w) {
@@ -1269,6 +1269,7 @@ function buildBusGraph(d) {
     if (!nameToIds[name]) nameToIds[name] = [];
     nameToIds[name].push(id);
   }
+  N = S.length;
 }
 
 function countBusRides(path) {
@@ -1353,6 +1354,7 @@ function transferCostFor(u, v) {
 // 乗換エッジ判定: 同一駅(grp)で路線コードが変わる0距離移動 = 列車乗り換え
 const THROUGH_PAIRS = new Set(["JE|JM","JM|JE"]);
 function isTransferEdge(u, v) {
+  if (!S[u] || !S[v]) return false;
   if (grp[u] !== grp[v] || S[u][2] === S[v][2]) return false;
   return !THROUGH_PAIRS.has(S[u][2]+'|'+S[v][2]);
 }
@@ -1394,8 +1396,8 @@ function quickTransfers(path) {
 
 // 純粋な距離Dijkstra（Plateau用）
 function plainDijkstra(srcSet) {
-  const dist = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
+  const dist = new Float64Array(S.length).fill(Infinity);
+  const prev = new Int32Array(S.length).fill(-1);
   const heap = [];
   for (const s of srcSet) { dist[s] = 0; hPush(heap, [0, s]); }
   while (heap.length > 0) {
@@ -1415,8 +1417,8 @@ function plainDijkstra(srcSet) {
 function roundShortest(srcSet, dstSet, K) {
   const labels = [], prev = [];
   for (let k = 0; k <= K; k++) {
-    labels.push(new Float64Array(N).fill(Infinity));
-    prev.push(new Int32Array(N).fill(-1));
+    labels.push(new Float64Array(S.length).fill(Infinity));
+    prev.push(new Int32Array(S.length).fill(-1));
   }
   const heap = [];
   for (const s of srcSet) { labels[0][s] = 0; hPush(heap, [0, s, 0]); }
@@ -1518,9 +1520,9 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
   // opWeight: 会社ごとの重み係数。会社別の運賃曲線の違い（初乗り額の差など）を
   // 距離だけでは捉えられないため、会社の魅力度をランダムに変えて多様な組み合わせを探る。
   opWeight = opWeight || {};
-  const dist = new Float64Array(N).fill(Infinity);
-  const real = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
+  const dist = new Float64Array(S.length).fill(Infinity);
+  const real = new Float64Array(S.length).fill(Infinity);
+  const prev = new Int32Array(S.length).fill(-1);
   const heap = [];
   for (const s of srcSet) { dist[s] = 0; real[s] = 0; hPush(heap, [0, s]); }
   while (heap.length > 0) {
@@ -1549,9 +1551,9 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
 // 辺重みを毎回少し揺らすことで、同じ到着駅・同じ乗換回数でも経由路線が異なる
 // 別ルートを引き出す（物量で多様性を稼ぐ）。各到着ノードへの最短を全て返す。
 function jitteredDijkstra(srcSet, dstSet, jitter, transferCost) {
-  const dist = new Float64Array(N).fill(Infinity);
-  const real = new Float64Array(N).fill(Infinity);
-  const prev = new Int32Array(N).fill(-1);
+  const dist = new Float64Array(S.length).fill(Infinity);
+  const real = new Float64Array(S.length).fill(Infinity);
+  const prev = new Int32Array(S.length).fill(-1);
   const heap = [];
   for (const s of srcSet) { dist[s] = 0; real[s] = 0; hPush(heap, [0, s]); }
   while (heap.length > 0) {
@@ -1584,7 +1586,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
   const t0 = performance.now();
   const K = 6;          // 最大乗換回数（ラウンド数）
   const PLATEAU_LIMIT = 120;
-  const TIMEOUT = 1500;
+  const TIMEOUT = busLoaded ? 5000 : 1500;
 
   // 経路プール（pathKeyで重複排除しながら収集）
   const pool = [];
@@ -1738,7 +1740,7 @@ function getFarNote(nodeA, nodeB) {
 function jrShortestDist(startId, endId) {
   const sg = grp[startId], eg = grp[endId];
   if (sg === eg) return 0;
-  const dist = new Float64Array(N).fill(Infinity);
+  const dist = new Float64Array(S.length).fill(Infinity);
   const heap = [];
   for (let n = 0; n < N; n++) { if (grp[n] === sg && JR_LINES.has(S[n][2])) { dist[n] = 0; hPush(heap, [0, n]); } }
   while (heap.length > 0) {
