@@ -234,6 +234,23 @@ optgroup { font-weight: 700; }
 </div>
 </div>
 
+<!-- Page: Map -->
+<div id="page-map" class="page">
+<div id="map-container" style="position:fixed;top:0;left:0;right:0;bottom:56px;z-index:50;display:none">
+  <div id="map-view" style="width:100%;height:100%"></div>
+  <div id="map-ui" style="position:absolute;top:10px;left:10px;right:10px;z-index:1000;pointer-events:none">
+    <div style="background:rgba(255,255,255,0.92);border-radius:8px;padding:8px 12px;font-size:0.85rem;pointer-events:auto;box-shadow:0 1px 4px rgba(0,0,0,0.15);display:inline-block;max-width:100%">
+      <span id="map-status">駅をタップして出発/到着を設定</span>
+    </div>
+  </div>
+  <div style="position:absolute;bottom:12px;left:10px;right:10px;z-index:1000;display:flex;gap:8px;justify-content:center;pointer-events:none">
+    <button onclick="mapSetMode('from')" id="map-btn-from" style="pointer-events:auto;padding:8px 16px;border-radius:20px;border:2px solid #0089c7;background:#0089c7;color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">出発駅を設定</button>
+    <button onclick="mapSetMode('to')" id="map-btn-to" style="pointer-events:auto;padding:8px 16px;border-radius:20px;border:2px solid #e67e00;background:#e67e00;color:#fff;font-weight:600;font-size:0.85rem;cursor:pointer">到着駅を設定</button>
+    <button onclick="navigate('search')" style="pointer-events:auto;padding:8px 16px;border-radius:20px;border:1px solid #aaa;background:#fff;color:#333;font-weight:600;font-size:0.85rem;cursor:pointer">戻る</button>
+  </div>
+</div>
+</div>
+
 <!-- Page: About -->
 <div id="page-about" class="page">
 <div class="container">
@@ -285,6 +302,9 @@ optgroup { font-weight: 700; }
 <div class="bottom-nav-inner">
   <a class="nav-item active" onclick="navigate('search')" data-page="search">
     <span class="nav-icon">&#128269;</span><span class="nav-label">検索</span>
+  </a>
+  <a class="nav-item" onclick="navigate('map')" data-page="map">
+    <span class="nav-icon">&#127759;</span><span class="nav-label">地図</span>
   </a>
   <a class="nav-item" onclick="navigate('lines')" data-page="lines">
     <span class="nav-icon">&#128647;</span><span class="nav-label">路線</span>
@@ -1854,7 +1874,7 @@ function clearStations(prefix) {
 
 // === GPS nearby search ===
 const gpsNearby = {}; // prefix -> { lat, lon, ids: Set, label: string }
-const GPS_RADIUS_KM = 2;
+const GPS_RADIUS_KM = 1.5;
 
 function findNearbyStations(lat, lon, radiusKm) {
   const R = 6371;
@@ -2510,7 +2530,7 @@ function escHtml(s) {
 
 
 // === SPA ROUTER ===
-const PAGES = ['search', 'results', 'lines', 'about'];
+const PAGES = ['search', 'results', 'lines', 'map', 'about'];
 let currentPage = 'search';
 
 function navigate(page, pushState) {
@@ -2529,6 +2549,9 @@ function navigate(page, pushState) {
       item.classList.remove('active');
     }
   }
+  const mapC = document.getElementById('map-container');
+  if (page === 'map') { mapC.style.display = 'block'; initMap(); }
+  else { mapC.style.display = 'none'; }
   if (pushState !== false) {
     history.pushState({ page }, '', '#' + page);
   }
@@ -2627,6 +2650,92 @@ function renderAboutLines() {
     html += '</div>';
   }
   el.innerHTML = html;
+}
+
+// === MAP PAGE (Leaflet lazy load) ===
+let mapObj = null;
+let mapMode = 'from'; // 'from' or 'to'
+let mapLoading = false;
+
+function mapSetMode(mode) {
+  mapMode = mode;
+  document.getElementById('map-btn-from').style.opacity = mode === 'from' ? '1' : '0.4';
+  document.getElementById('map-btn-to').style.opacity = mode === 'to' ? '1' : '0.4';
+  document.getElementById('map-status').textContent = (mode === 'from' ? '出発' : '到着') + '駅をタップで設定';
+}
+
+function initMap() {
+  if (mapObj || mapLoading) return;
+  mapLoading = true;
+  document.getElementById('map-status').textContent = '地図を読み込み中…';
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  document.head.appendChild(link);
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  script.onload = () => { mapLoading = false; buildMap(); };
+  document.head.appendChild(script);
+}
+
+function buildMap() {
+  const map = L.map('map-view', { zoomControl: false }).setView([35.69, 139.75], 12);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+  }).addTo(map);
+  mapObj = map;
+
+  const lineColors = {};
+  for (const [code, info] of Object.entries(LINES)) lineColors[code] = info.color;
+
+  const stationsByGrp = {};
+  for (const [idStr, [lat, lon]] of Object.entries(STATION_COORDS)) {
+    const id = parseInt(idStr);
+    if (HIDDEN_STATIONS.has(id)) continue;
+    const g = grp[id];
+    if (!stationsByGrp[g]) stationsByGrp[g] = { lat, lon, ids: [], names: new Set(), lines: [] };
+    const entry = stationsByGrp[g];
+    entry.ids.push(id);
+    entry.names.add(S[id][1]);
+    entry.lines.push(S[id][2]);
+  }
+
+  for (const [g, info] of Object.entries(stationsByGrp)) {
+    const name = [...info.names].join('/');
+    const lineList = [...new Set(info.lines)];
+    const color = lineColors[lineList[0]] || '#666';
+    const marker = L.circleMarker([info.lat, info.lon], {
+      radius: 4, fillColor: color, color: '#fff', weight: 1, fillOpacity: 0.85
+    }).addTo(map);
+    marker.bindTooltip(name, { direction: 'top', offset: [0, -6] });
+    marker.on('click', () => {
+      const stnName = [...info.names][0];
+      document.getElementById(mapMode).value = stnName;
+      document.getElementById(mapMode + '-line').value = '';
+      delete gpsNearby[mapMode];
+      document.getElementById('map-status').textContent = (mapMode === 'from' ? '出発' : '到着') + ': ' + stnName;
+      if (mapMode === 'from') mapSetMode('to');
+    });
+  }
+
+  // GPS地点の丸
+  map.on('click', e => {
+    const result = findNearbyStations(e.latlng.lat, e.latlng.lng, GPS_RADIUS_KM);
+    if (result.ids.size === 0) {
+      document.getElementById('map-status').textContent = '付近に駅がありません';
+      return;
+    }
+    const prefix = mapMode;
+    gpsNearby[prefix] = { lat: e.latlng.lat, lon: e.latlng.lng, ids: result.ids, label: '地図指定(' + result.names.length + '駅)' };
+    document.getElementById(prefix).value = gpsNearby[prefix].label;
+    document.getElementById(prefix + '-line').value = '';
+    document.getElementById('map-status').textContent = (prefix === 'from' ? '出発' : '到着') + ': ' + result.names.slice(0, 3).join('・') + (result.names.length > 3 ? '…' : '') + ' (' + result.names.length + '駅)';
+    if (prefix === 'from') mapSetMode('to');
+  });
+
+  mapSetMode('from');
+  document.getElementById('map-status').textContent = '駅をタップ、または地図上をタップで付近の駅を設定';
 }
 
 // === INIT ===
