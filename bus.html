@@ -26,7 +26,7 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; }
   <a href="index.html#search">← 検索に戻る</a>
   <label><input type="checkbox" id="chk-train" checked onchange="toggleTrain()"> 鉄道駅</label>
   <label><input type="checkbox" id="chk-edges" checked onchange="toggleEdges()"> 路線</label>
-  <span style="color:#888">1666停留所 / 150路線</span>
+  <span style="color:#888">150系統</span>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -36,51 +36,57 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-let busStops, busEdges, trainConns;
+let busStops, busRoutes, trainConns;
 let edgeLayer, trainLayer;
 
 fetch('bus_compact.json').then(r => r.json()).then(d => {
-  busStops = d.s; busEdges = d.e; trainConns = d.c;
+  busStops = d.s; busRoutes = d.r; trainConns = d.c; // s[poleIdx]=[lat,lon,name], r=[{n,e}], c=[[poleIdx,駅名,dist]]
   buildBusMap();
 });
 
 function buildBusMap() {
-  const stopMap = new Map();
-  for (const [name, lat, lon, rc] of busStops) stopMap.set(name, { lat, lon, rc });
-
-  // Draw edges
+  // Draw route edges (per 系統)
   edgeLayer = L.layerGroup();
-  for (const [a, b] of busEdges) {
-    const sa = stopMap.get(a), sb = stopMap.get(b);
-    if (!sa || !sb) continue;
-    L.polyline([[sa.lat, sa.lon], [sb.lat, sb.lon]], {
-      color: '#2196F3', weight: 1.5, opacity: 0.35
-    }).addTo(edgeLayer);
+  for (const route of busRoutes) {
+    for (const [a, b] of route.e) {
+      const sa = busStops[a], sb = busStops[b];
+      if (!sa || !sb) continue;
+      L.polyline([[sa[0], sa[1]], [sb[0], sb[1]]], {
+        color: '#2196F3', weight: 1.5, opacity: 0.3
+      }).addTo(edgeLayer);
+    }
   }
   edgeLayer.addTo(map);
 
-  // Draw bus stops
-  for (const [name, lat, lon, rc] of busStops) {
-    const r = Math.min(2 + rc * 0.3, 7);
-    const m = L.circleMarker([lat, lon], {
-      radius: r, fillColor: '#2196F3', color: '#fff', weight: 0.8, fillOpacity: 0.7
+  // Count routes per pole
+  const poleRouteCount = {};
+  for (const route of busRoutes) {
+    const seen = new Set();
+    for (const [a, b] of route.e) { seen.add(a); seen.add(b); }
+    for (const p of seen) poleRouteCount[p] = (poleRouteCount[p] || 0) + 1;
+  }
+
+  // Draw bus stop poles
+  for (let i = 0; i < busStops.length; i++) {
+    const s = busStops[i];
+    if (!s) continue;
+    const rc = poleRouteCount[i] || 1;
+    const m = L.circleMarker([s[0], s[1]], {
+      radius: Math.min(2 + rc * 0.3, 6), fillColor: '#2196F3', color: '#fff', weight: 0.8, fillOpacity: 0.7
     }).addTo(map);
-    m.bindTooltip(name, { direction: 'top', offset: [0, -4] });
-    m.on('click', () => showStopInfo(name));
+    m.bindTooltip(s[2], { direction: 'top', offset: [0, -4] });
+    m.on('click', () => showStopInfo(i));
   }
 
   // Train connections
   trainLayer = L.layerGroup();
   const trainStops = new Map();
-  for (const [bName, tName, dist] of trainConns) {
-    const bs = stopMap.get(bName);
-    if (!bs) continue;
+  for (const [pIdx, tName, dist] of trainConns) {
+    if (!busStops[pIdx]) continue;
     if (!trainStops.has(tName)) trainStops.set(tName, []);
-    trainStops.get(tName).push({ bName, dist });
+    trainStops.get(tName).push({ pIdx, dist });
   }
 
-  // Load train station coords from index.html data (already in bus_compact via conns)
-  // We need train station positions - extract from index.html
   fetch('index.html').then(r => r.text()).then(html => {
     const cm = [...html.match(/const STATION_COORDS=\{([\s\S]*?)\};/)[1].matchAll(/(\d+):\[([\d.-]+),([\d.-]+)\]/g)];
     const sm = [...html.match(/const S = \[(.*?)\];/s)[1].matchAll(/\[(\d+),"([^"]+)","([^"]+)"\]/g)];
@@ -89,18 +95,16 @@ function buildBusMap() {
       const c = cm.find(x => x[1] === id);
       if (c && !trainPos[name]) trainPos[name] = [parseFloat(c[2]), parseFloat(c[3])];
     }
-
     for (const [tName, conns] of trainStops) {
       const tp = trainPos[tName];
       if (!tp) continue;
       L.circleMarker(tp, {
         radius: 5, fillColor: '#e03030', color: '#fff', weight: 1.5, fillOpacity: 0.9
       }).addTo(trainLayer).bindTooltip(tName + '駅', { direction: 'top', offset: [0, -6] });
-
-      for (const { bName, dist } of conns) {
-        const bs = stopMap.get(bName);
+      for (const { pIdx } of conns) {
+        const bs = busStops[pIdx];
         if (!bs) continue;
-        L.polyline([[bs.lat, bs.lon], tp], {
+        L.polyline([[bs[0], bs[1]], tp], {
           color: '#e03030', weight: 1, opacity: 0.4, dashArray: '3,4'
         }).addTo(trainLayer);
       }
@@ -109,8 +113,9 @@ function buildBusMap() {
   });
 }
 
-function showStopInfo(name) {
-  const conns = trainConns.filter(([b]) => b === name);
+function showStopInfo(pIdx) {
+  const name = busStops[pIdx][2];
+  const conns = trainConns.filter(([p]) => p === pIdx);
   const box = document.getElementById('info-box');
   let html = '<b>' + name + '</b>';
   if (conns.length > 0) {

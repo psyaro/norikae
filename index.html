@@ -387,12 +387,11 @@ const LINES = {
   KZ: { name: "京王動物園線", color: "#DD0077" },
   KB: { name: "京王競馬場線", color: "#DD0077" },
   IN: { name: "京王井の頭線", color: "#1B813E" },
-  BUS: { name: "都営バス", color: "#2196F3" },
 };
 
 const METRO_LINES = new Set(["G","M","H","T","C","Y","Z","N","F"]);
 function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
-const TOEI_LINES = new Set(["A","I","S","E","NT","SA","BUS"]);
+const TOEI_LINES = new Set(["A","I","S","E","NT","SA"]);
 const JR_LINES = new Set(["JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JV","JX"]);
 const LOCAL_JR_LINES = new Set(["JP"]); // 地方交通線（幹線と運賃が異なる、運賃計算未対応）
 const TX_LINES = new Set(["TX"]);
@@ -405,6 +404,7 @@ function operatorOf(lineCode) {
   if (TX_LINES.has(lineCode)) return "tx";
   if (KEISEI_LINES.has(lineCode)) return "keisei";
   if (KEIO_LINES.has(lineCode)) return "keio";
+  if (lineCode[0] === 'B' && lineCode[1] === 'U') return "toei"; // BUS* = 都営（無料）
   return "other";
 }
 
@@ -1211,72 +1211,110 @@ function loadBusData() {
   fetch('bus_compact.json').then(r => r.json()).then(d => {
     busLoading = false; busLoaded = true;
     buildBusGraph(d);
-    document.getElementById('chk-bus').nextSibling.textContent = ' 都営バスを含む（' + d.s.length + '停留所読込済）';
+    document.getElementById('chk-bus').nextSibling.textContent = ' 都営バスを含む（' + d.r.length + '系統読込済）';
   }).catch(() => { busLoading = false; alert('バスデータの読み込みに失敗'); });
 }
 
+const BUS_LINE_CODES = new Set(); // "BUS0".."BUS149"
+function isBusLine(code) { return code.startsWith('BUS'); }
+
+function busDist(ac, bc) {
+  const dY = (ac[0]-bc[0])*111, dX = (ac[1]-bc[1])*111*Math.cos(ac[0]*Math.PI/180);
+  return Math.max(Math.round(Math.sqrt(dX*dX+dY*dY)*10)/10, 0.1);
+}
+
 function buildBusGraph(d) {
-  const base = S.length;
-  const busId = new Map();
+  // d.s[poleIdx] = [lat, lon, name]、d.r[i] = {n:系統名, e:[[poleA,poleB]...]}、d.c = [[poleIdx, 駅名, dist]]
+  // 各系統を独立した路線として扱い、停留所poleごとに (pole, 系統) でノード生成する。
+  // pole IDは固有なので遠方の同名停留所も別物として正しく分離される。
+  const nodeOf = []; // [routeIdx][poleIdx] -> node id
+  const nodesByPole = {}; // poleIdx -> [node id...]（同一pole・別系統の乗換用）
+  const poleGrp = {}; // poleIdx -> grp
 
-  for (const [name, lat, lon] of d.s) {
-    const id = S.length;
-    S.push([id, name, 'BUS']);
-    adj.push([]);
-    STATION_COORDS[id] = [lat, lon];
-    grp.push(gid++);
-    busId.set(name, id);
+  for (let ri = 0; ri < d.r.length; ri++) {
+    const route = d.r[ri];
+    const code = 'BUS' + ri;
+    BUS_LINE_CODES.add(code);
+    LINES[code] = { name: '都営バス ' + route.n, color: '#2196F3' };
+    nodeOf[ri] = {};
+
+    function ensureNode(pIdx) {
+      if (nodeOf[ri][pIdx] !== undefined) return nodeOf[ri][pIdx];
+      const s = d.s[pIdx];
+      if (!s) return -1;
+      const id = S.length;
+      S.push([id, s[2], code]);
+      adj.push([]);
+      STATION_COORDS[id] = [s[0], s[1]];
+      if (poleGrp[pIdx] === undefined) poleGrp[pIdx] = gid++;
+      grp.push(poleGrp[pIdx]);
+      nodeOf[ri][pIdx] = id;
+      if (!nodesByPole[pIdx]) nodesByPole[pIdx] = [];
+      nodesByPole[pIdx].push(id);
+      const name = s[2];
+      if (!nameToIds[name]) nameToIds[name] = [];
+      nameToIds[name].push(id);
+      return id;
+    }
+    for (const [a, b] of route.e) {
+      const ai = ensureNode(a), bi = ensureNode(b);
+      if (ai < 0 || bi < 0) continue;
+      const w = busDist(STATION_COORDS[ai], STATION_COORDS[bi]);
+      adj[ai].push({to:bi,w}); adj[bi].push({to:ai,w});
+    }
   }
 
-  // Bus-bus edges
-  for (const [a, b] of d.e) {
-    const ai = busId.get(a), bi = busId.get(b);
-    if (ai === undefined || bi === undefined) continue;
-    const ac = STATION_COORDS[ai], bc = STATION_COORDS[bi];
-    const dY = (ac[0]-bc[0])*111, dX = (ac[1]-bc[1])*111*Math.cos(ac[0]*Math.PI/180);
-    const w = Math.max(Math.round(Math.sqrt(dX*dX+dY*dY)*10)/10, 0.1);
-    adj[ai].push({to:bi,w}); adj[bi].push({to:ai,w});
+  // 同一pole（同じ停留所、別系統）間を0km乗換辺で接続。grpも統合。
+  for (const ids of Object.values(nodesByPole)) {
+    for (let i = 1; i < ids.length; i++) {
+      adj[ids[0]].push({to:ids[i], w:0}); adj[ids[i]].push({to:ids[0], w:0});
+    }
   }
 
-  // Connect bus stops ↔ nearby train stations (from pre-computed connections)
-  for (const [bName, tName] of d.c) {
-    const bi = busId.get(bName);
-    if (bi === undefined) continue;
+  // 同名かつ近接(<0.3km)な別pole間も乗換接続（方面別乗り場の統合）。
+  // 遠方同名pole（推定誤差の外れ値や別地域の同名）は接続しない。
+  const poleByName = {};
+  for (const pIdx in nodesByPole) {
+    const s = d.s[pIdx];
+    if (!s) continue;
+    if (!poleByName[s[2]]) poleByName[s[2]] = [];
+    poleByName[s[2]].push({pIdx, lat: s[0], lon: s[1]});
+  }
+  for (const list of Object.values(poleByName)) {
+    if (list.length < 2) continue;
+    for (let i = 0; i < list.length; i++)
+      for (let j = i+1; j < list.length; j++) {
+        const dY = (list[i].lat-list[j].lat)*111, dX = (list[i].lon-list[j].lon)*111*Math.cos(list[i].lat*Math.PI/180);
+        if (Math.sqrt(dX*dX+dY*dY) > 0.3) continue;
+        const a = nodesByPole[list[i].pIdx][0], b = nodesByPole[list[j].pIdx][0];
+        adj[a].push({to:b, w:0}); adj[b].push({to:a, w:0});
+        // grp統合
+        const ga = grp[a];
+        for (const n of nodesByPole[list[j].pIdx]) grp[n] = ga;
+      }
+  }
+
+  // バス停留所(pole) ↔ 鉄道駅（事前算出の300m以内接続）
+  for (const [pIdx, tName] of d.c) {
+    const ids = nodesByPole[pIdx];
     const tIds = nameToIds[tName];
-    if (!tIds) continue;
-    for (const ti of tIds) {
+    if (!ids || !tIds) continue;
+    for (const bi of ids) for (const ti of tIds) {
+      if (isBusLine(S[ti][2])) continue; // 駅側がバスでないこと
       adj[bi].push({to:ti, w:BUS_TRANSFER_WEIGHT});
       adj[ti].push({to:bi, w:BUS_TRANSFER_WEIGHT});
-      grp[bi] = grp[ti]; // same station complex
+      grp[bi] = grp[ti];
     }
-  }
-
-  // Same-name direct connections (bus stop name === train station name)
-  for (const [name] of d.s) {
-    const bi = busId.get(name);
-    const tIds = nameToIds[name];
-    if (!tIds || bi === undefined) continue;
-    for (const ti of tIds) {
-      if (!adj[bi].some(e => e.to === ti)) {
-        adj[bi].push({to:ti, w:0.5}); adj[ti].push({to:bi, w:0.5});
-        grp[bi] = grp[ti];
-      }
-    }
-  }
-
-  // Register in nameToIds
-  for (const [name, id] of busId) {
-    if (!nameToIds[name]) nameToIds[name] = [];
-    nameToIds[name].push(id);
   }
   N = S.length;
 }
 
 function countBusRides(path) {
-  let rides = 0; let onBus = false;
+  let rides = 0; let curBus = null;
   for (const id of path) {
-    if (S[id][2] === 'BUS') { if (!onBus) { rides++; onBus = true; } }
-    else { onBus = false; }
+    const code = S[id][2];
+    if (isBusLine(code)) { if (code !== curBus) { rides++; curBus = code; } }
+    else { curBus = null; }
   }
   return rides;
 }
@@ -1348,7 +1386,7 @@ function companyCost(opA, opB) {
 }
 function transferCostFor(u, v) {
   const a = S[u][2], b = S[v][2];
-  if (a === 'BUS' || b === 'BUS') return BUS_CROSS_COST;
+  if (isBusLine(a) || isBusLine(b)) return BUS_CROSS_COST;
   return companyCost(operatorOf(a), operatorOf(b));
 }
 // 乗換エッジ判定: 同一駅(grp)で路線コードが変わる0距離移動 = 列車乗り換え
@@ -1533,7 +1571,7 @@ function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
       if (w === 0) fw = 0.3; // 乗換コスト（初乗り重複の近似、無駄な乗換を抑制）
       else {
         const op = operatorOf(S[u][2]);
-        fw = (S[u][2] === 'BUS') ? w * 3 : (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
+        fw = isBusLine(S[u][2]) ? w * 3 : (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
       }
       if (jitter) fw *= (1 + (Math.random() * 2 - 1) * jitter);
       const nd = d + fw;
