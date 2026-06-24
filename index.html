@@ -1010,22 +1010,25 @@ function roundShortest(srcSet, dstSet, K) {
     }
   }
   const routes = [];
-  let best = Infinity;
-  for (let k = 0; k <= K; k++) {
-    let bd = Infinity, bn = -1;
-    for (const t of dstSet) if (labels[k][t] < bd) { bd = labels[k][t]; bn = t; }
-    if (bn === -1 || bd >= best - 1e-9) continue; // 乗換を増やしても縮まないなら不要
-    best = bd;
-    // 経路復元（kを追跡しながら遡る）
-    const path = []; let c = bn, ck = k;
-    while (c !== -1) {
-      path.push(c);
-      const p = prev[ck][c];
-      if (p !== -1 && isTransferEdge(p, c)) ck--;
-      c = p;
+  // 各到着ノード(別路線の終着駅)ごとに、乗換回数別の最短経路を出す。
+  // 「乗換0回で丸ノ内線新宿」と「乗換0回で中央快速新宿(JC)」のような
+  // 同一乗換回数の別路線ルートを両方残すため、dstノード単位で抽出する。
+  for (const t of dstSet) {
+    let best = Infinity;
+    for (let k = 0; k <= K; k++) {
+      const bd = labels[k][t];
+      if (bd === Infinity || bd >= best - 1e-9) continue; // 乗換を増やしても縮まないなら不要
+      best = bd;
+      const path = []; let c = t, ck = k;
+      while (c !== -1) {
+        path.push(c);
+        const p = prev[ck][c];
+        if (p !== -1 && isTransferEdge(p, c)) ck--;
+        c = p;
+      }
+      path.reverse();
+      routes.push({ distance: Math.round(bd * 10) / 10, path });
     }
-    path.reverse();
-    routes.push({ distance: Math.round(bd * 10) / 10, path });
   }
   return routes;
 }
