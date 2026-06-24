@@ -972,6 +972,17 @@ for (const ids of Object.values(nameToIds)) {
 // Cross-name transfers
 for (const [u, v] of CROSS_TRANSFERS) addEdge(u, v, 0);
 
+// 都電荒川線(SA)は路面電車のため、他路線との乗換に徒歩距離がある。
+// SA↔非SA間の辺重みを0.5kmに設定（探索で乗換コストが重くなる）。
+for (let u = 0; u < N; u++) {
+  if (S[u][2] !== 'SA') continue;
+  for (const e of adj[u]) { if (S[e.to][2] !== 'SA' && e.w === 0) e.w = 0.5; }
+}
+for (let u = 0; u < N; u++) {
+  if (S[u][2] === 'SA') continue;
+  for (const e of adj[u]) { if (S[e.to][2] === 'SA' && e.w === 0) e.w = 0.5; }
+}
+
 // === STATION COMPLEX GROUPS (Union-Find) ===
 const uf = Array.from({length: N}, (_, i) => i);
 function ufFind(x) { while (uf[x] !== x) { uf[x] = uf[uf[x]]; x = uf[x]; } return x; }
