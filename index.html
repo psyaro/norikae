@@ -35,6 +35,17 @@ h1 { text-align: center; font-size: 1.5rem; margin-bottom: 4px; }
 .calc-btn { width: 100%; padding: 12px; background: #0089c7; color: #fff; border: none;
   border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
 .calc-btn:hover { background: #006fa3; }
+.via-container { margin-bottom: 8px; }
+.via-group { background: #f8fbff; border: 1px dashed #c0d8ef; border-radius: 8px; padding: 12px; margin-bottom: 8px; position: relative; }
+.via-group .input-group { margin-bottom: 8px; }
+.via-group .input-group:last-of-type { margin-bottom: 0; }
+.via-remove-btn { position: absolute; top: 6px; right: 8px; background: none; border: none; color: #c66;
+  font-size: 1.1rem; cursor: pointer; padding: 2px 6px; line-height: 1; }
+.via-remove-btn:hover { color: #d32f2f; }
+.via-label { font-size: 0.75rem; color: #0089c7; font-weight: 600; margin-bottom: 4px; }
+.via-add-btn { width: 100%; padding: 8px; background: #fff; color: #0089c7; border: 1px dashed #0089c7;
+  border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: background 0.2s; margin-bottom: 8px; }
+.via-add-btn:hover { background: #f0f7ff; }
 .fare-display { text-align: center; padding: 16px 0; }
 .fare-main { font-size: 2.2rem; font-weight: 700; color: #0089c7; }
 .fare-main span { font-size: 1rem; font-weight: 400; }
@@ -178,6 +189,8 @@ optgroup { font-weight: 700; }
     <div class="swap-row">
       <button class="swap-btn" onclick="swapStations()" title="入れ替え">&#8693;</button>
     </div>
+    <div class="via-container" id="via-container"></div>
+    <button class="via-add-btn" id="via-add-btn" onclick="addVia()">＋ 経由地を追加</button>
     <div class="input-group">
       <label>到着路線（任意）</label>
       <select id="to-line" onchange="updateStations('to')"><option value="">すべての路線</option></select>
@@ -1461,9 +1474,80 @@ document.getElementById("to-line").value = "M";
 updateStations("to");
 document.getElementById("to").value = "新宿";
 
+// === 経由地管理 ===
+const VIA_MAX = 3;
+let viaCount = 0;
+
+function addVia() {
+  if (viaCount >= VIA_MAX) return;
+  const idx = viaCount++;
+  const container = document.getElementById('via-container');
+  const div = document.createElement('div');
+  div.className = 'via-group';
+  div.id = 'via-group-' + idx;
+  div.innerHTML =
+    '<button class="via-remove-btn" onclick="removeVia(' + idx + ')" title="削除">×</button>' +
+    '<div class="via-label">経由地' + (idx + 1) + '</div>' +
+    '<div class="input-group"><label>経由路線（任意）</label>' +
+    '<select id="via-' + idx + '-line" onchange="updateStations(\'via-' + idx + '\')"><option value="">すべての路線</option></select></div>' +
+    '<div class="input-group"><label>経由駅（入力して検索）</label>' +
+    '<input type="text" id="via-' + idx + '" list="via-' + idx + '-stations" placeholder="駅名を入力…" autocomplete="off">' +
+    '<datalist id="via-' + idx + '-stations"></datalist></div>';
+  container.appendChild(div);
+  populateLineSelect('via-' + idx + '-line');
+  fillDatalist('via-' + idx, allStationNames);
+  if (viaCount >= VIA_MAX) document.getElementById('via-add-btn').style.display = 'none';
+}
+
+function removeVia(idx) {
+  const el = document.getElementById('via-group-' + idx);
+  if (el) el.remove();
+  // 後続のインデックスを詰め直す
+  const container = document.getElementById('via-container');
+  const groups = container.querySelectorAll('.via-group');
+  viaCount = groups.length;
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    g.id = 'via-group-' + i;
+    g.querySelector('.via-label').textContent = '経由地' + (i + 1);
+    g.querySelector('.via-remove-btn').setAttribute('onclick', 'removeVia(' + i + ')');
+    const sel = g.querySelector('select');
+    const oldPrefix = sel.id.replace('-line', '');
+    const newPrefix = 'via-' + i;
+    sel.id = newPrefix + '-line';
+    sel.setAttribute('onchange', "updateStations('" + newPrefix + "')");
+    const inp = g.querySelector('input');
+    inp.id = newPrefix;
+    inp.setAttribute('list', newPrefix + '-stations');
+    const dl = g.querySelector('datalist');
+    dl.id = newPrefix + '-stations';
+  }
+  document.getElementById('via-add-btn').style.display = '';
+}
+
+function populateLineSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  for (const code of LINE_ORDER) {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = LINES[code].name;
+    const op = operatorOf(code);
+    sel.appendChild(o);
+  }
+}
+
+function getViaNames() {
+  const names = [];
+  for (let i = 0; i < viaCount; i++) {
+    const el = document.getElementById('via-' + i);
+    if (el) names.push(el.value.trim());
+  }
+  return names;
+}
+
 function calculate() {
   const fromName = document.getElementById("from").value.trim();
   const toName = document.getElementById("to").value.trim();
+  const viaNames = getViaNames();
   const resultEl = document.getElementById("result");
   const summaryEl = document.getElementById("result-summary");
 
@@ -1477,16 +1561,98 @@ function calculate() {
   if (fromName === toName) { showError('出発駅と到着駅が同じです'); return; }
   if (!nameToIds[fromName]) { showError('「' + escHtml(fromName) + '」という駅が見つかりません'); return; }
   if (!nameToIds[toName]) { showError('「' + escHtml(toName) + '」という駅が見つかりません'); return; }
+  for (const v of viaNames) {
+    if (!v) { showError('経由駅を入力してください'); return; }
+    if (!nameToIds[v]) { showError('「' + escHtml(v) + '」という駅が見つかりません'); return; }
+  }
 
+  // サマリ表示
+  const stops = [fromName, ...viaNames, toName];
+  const summaryHtml = stops.map(n => '<b>' + escHtml(n) + '</b>').join(' → ');
   resultEl.innerHTML = '<div class="loading"><div class="loading-spinner"></div><br>経路を探索中…</div>';
-  summaryEl.innerHTML = '<b>' + escHtml(fromName) + '</b> → <b>' + escHtml(toName) + '</b>';
+  summaryEl.innerHTML = summaryHtml;
   navigate('results');
 
   setTimeout(() => {
-    lastRoutes = findKRoutes(fromName, toName);
+    const legs = [];
+    for (let i = 0; i < stops.length - 1; i++) legs.push([stops[i], stops[i + 1]]);
+
+    if (legs.length === 1) {
+      lastRoutes = findKRoutes(legs[0][0], legs[0][1]);
+    } else {
+      // 各レグを独立探索し、組み合わせて合成
+      const legResults = legs.map(([f, t]) => {
+        const r = findKRoutes(f, t);
+        r.sort((a, b) => a.price - b.price);
+        return r.slice(0, 15);
+      });
+      // cross-product で合成
+      let combined = legResults[0].map(r => ({ parts: [r] }));
+      for (let li = 1; li < legResults.length; li++) {
+        const next = [];
+        for (const prev of combined) {
+          for (const leg of legResults[li]) {
+            next.push({ parts: [...prev.parts, leg] });
+          }
+        }
+        combined = next;
+      }
+      // 合成ルートを構築
+      const merged = [];
+      for (const c of combined) {
+        const path = [...c.parts[0].path];
+        let dist = c.parts[0].distance;
+        for (let i = 1; i < c.parts.length; i++) {
+          const lp = c.parts[i].path;
+          if (grp[path[path.length - 1]] === grp[lp[0]]) {
+            for (let j = 1; j < lp.length; j++) path.push(lp[j]);
+          } else {
+            for (const id of lp) path.push(id);
+          }
+          dist += c.parts[i].distance;
+        }
+        dist = Math.round(dist * 10) / 10;
+        merged.push({ distance: dist, path });
+      }
+      // enrich
+      for (const r of merged) {
+        cleanPath(r.path);
+        r.transfers = quickTransfers(r.path);
+        const visited = new Set();
+        for (const id of r.path) visited.add(grp[id]);
+        r.stops = visited.size;
+        const fi = calcRouteFare(r.path);
+        r.fareInfo = fi;
+        r.price = fi.totalTicket;
+        let paidCross = 0, toeiCross = 0;
+        for (let i = 1; i < r.path.length; i++) {
+          const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
+          if (opA !== opB) {
+            if (opA === 'toei' || opB === 'toei') toeiCross++;
+            else paidCross++;
+          }
+        }
+        r.cross = paidCross + toeiCross;
+        r.score = r.distance + r.transfers * 3 + paidCross * 3 + toeiCross * 0.3;
+      }
+      // dedup by shape+dist+transfers
+      const byKey = new Map();
+      for (const r of merged) {
+        if (hasPassthroughTransfer(r.path)) continue;
+        const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
+        const prev = byKey.get(key);
+        if (!prev || r.stops < prev.stops) byKey.set(key, r);
+      }
+      const deduped = [...byKey.values()];
+      deduped.sort((a, b) => a.price - b.price);
+      deduped.searchMs = 0;
+      deduped.rawCount = merged.length;
+      lastRoutes = deduped;
+    }
+
     if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
-    lastFromName = fromName;
-    lastToName = toName;
+    lastFromName = stops[0];
+    lastToName = stops[stops.length - 1];
     currentSort = 'price';
     displayCount = 30;
     renderRoutes();
@@ -1521,7 +1687,9 @@ function renderRoutes() {
   const resultEl = document.getElementById("result");
   const summaryEl = document.getElementById("result-summary");
   const ms = lastRoutes.searchMs != null ? ' (' + lastRoutes.searchMs + 'ms / 探索' + lastRoutes.rawCount + '件)' : '';
-  summaryEl.innerHTML = '<b>' + escHtml(lastFromName) + '</b> → <b>' + escHtml(lastToName) + '</b>' + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
+  const vias = getViaNames().filter(v => v);
+  const allStops = [lastFromName, ...vias, lastToName].map(n => '<b>' + escHtml(n) + '</b>').join(' → ');
+  summaryEl.innerHTML = allStops + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
   displayedSorted = [...lastRoutes];
   const cmp = {
     recommend:(a,b) => a.score - b.score,
