@@ -539,7 +539,10 @@ optgroup { font-weight: 700; }
     <p>・実際の運賃とは異なる場合があります<br>
        ・会社間の連絡運輸・乗継割引は考慮していません<br>
        ・JR大都市近郊区間の特例（大回り乗車）は最短営業キロで自動計算<br>
-       ・一部の乗換は徒歩移動を伴います</p>
+       ・一部の乗換は徒歩移動を伴います<br>
+       ・八高線など地方交通線は未対応<br>
+       ・北千住～西日暮里を通過する場合など一部特殊運賃に対応しきれていない場合があります。順次対応します
+    </p>
   </div>
   <div class="card about-section">
     <h2>アップデート</h2>
@@ -636,6 +639,8 @@ const LINES = {
   TX: { name: "つくばエクスプレス", color: "#2E67B1" },
   KS: { name: "京成本線", color: "#1E3C78" },
   KO: { name: "京成押上線", color: "#1E3C78" },
+  KC: { name: "京成千葉線", color: "#1E3C78" },
+  KG: { name: "京成金町線", color: "#1E3C78" },
   JE: { name: "京葉線", color: "#C9252F" },
   JO: { name: "横須賀・総武快速線", color: "#0067C0" },
   JM: { name: "武蔵野線", color: "#E96734" },
@@ -688,6 +693,7 @@ const LINES = {
   SW: { name: "\u897f\u6b66\u591a\u6469\u5ddd\u7dda", color: "#EC6D71" },
   SL: { name: "\u897f\u6b66\u5c71\u53e3\u7dda", color: "#E60012" },
   TT: { name: "\u591a\u6469\u90fd\u5e02\u30e2\u30ce\u30ec\u30fc\u30eb\u7dda", color: "#FF7F00" },
+  UR: { name: "\u3086\u308a\u304b\u3082\u3081", color: "#00b5ad" },
 };
 
 const METRO_LINES = new Set(["G","M","H","T","C","Y","Z","N","F"]);
@@ -696,7 +702,7 @@ const TOEI_LINES = new Set(["A","I","S","E","NT","SA"]);
 const JR_LINES = new Set(["JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JV","JX"]);
 const LOCAL_JR_LINES = new Set(["JP"]); // 地方交通線（幹線と運賃が異なる、運賃計算未対応）
 const TX_LINES = new Set(["TX"]);
-const KEISEI_LINES = new Set(["KS","KO"]);
+const KEISEI_LINES = new Set(["KS","KO","KC","KG"]);
 const KEIO_LINES = new Set(["KE","KR","KT","KZ","KB","IN"]);
 const TOBU_LINES = new Set(["TS","TC","TDS","TN","TU","TG","TR","TK","TKR","TJ","TV","TP"]);
 const SEIBU_LINES = new Set(["SI","SC","SYU","STO","SSA","SS","SB","ST","SK","SSP","SW","SL"]);
@@ -711,6 +717,7 @@ function operatorOf(lineCode) {
   if (TOBU_LINES.has(lineCode)) return "tobu";
   if (SEIBU_LINES.has(lineCode)) return "seibu";
   if (TAMA_MONORAIL_LINES.has(lineCode)) return "tama";
+  if (lineCode === 'UR') return "yurikamome";
   if (lineCode[0] === 'B' && lineCode[1] === 'U') return "toei"; // BUS* = 都営（無料）
   return "other";
 }
@@ -984,6 +991,12 @@ const S = [
 [932,"西永福","IN"],[933,"浜田山","IN"],[934,"高井戸","IN"],
 [935,"富士見ヶ丘","IN"],[936,"久我山","IN"],[937,"三鷹台","IN"],
 [938,"井の頭公園","IN"],[939,"吉祥寺","IN"],
+// ゆりかもめ 940-955
+[940,"新橋","UR"],[941,"汐留","UR"],[942,"竹芝","UR"],[943,"日の出","UR"],
+[944,"芝浦ふ頭","UR"],[945,"お台場海浜公園","UR"],[946,"台場","UR"],
+[947,"東京国際クルーズターミナル","UR"],[948,"テレコムセンター","UR"],
+[949,"青海","UR"],[950,"東京ビッグサイト","UR"],[951,"有明","UR"],
+[952,"有明テニスの森","UR"],[953,"市場前","UR"],[954,"新豊洲","UR"],[955,"豊洲","UR"],
 ];
 
 // === EDGES (adjacent stations with 営業キロ) ===
@@ -1177,6 +1190,8 @@ const EDGES = [
 [892,922,0.9],
 // 京王井の頭線
 [923,924,0.5],[924,925,0.9],[925,926,1.0],[926,927,0.6],[927,928,0.5],[928,929,0.5],[929,930,0.9],[930,931,1.1],[931,932,0.7],[932,933,0.8],[933,934,1.2],[934,935,0.7],[935,936,0.8],[936,937,1.0],[937,938,0.9],[938,939,0.6],
+// ゆりかもめ
+[940,941,0.4],[941,942,1.2],[942,943,0.6],[943,944,0.9],[944,945,3.9],[945,946,0.8],[946,947,0.6],[947,948,0.8],[948,949,1.0],[949,950,1.1],[950,951,0.7],[951,952,0.7],[952,953,0.8],[953,954,0.5],[954,955,0.7],
 ];
 
 // === TRANSFER CONNECTIONS (0 km) ===
@@ -1314,7 +1329,28 @@ addTamaRoute([["\u4e0a\u5317\u53f0",null],["\u685c\u8857\u9053",0.7],["\u7389\u5
 CROSS_TRANSFERS.push([getTamaId("\u7acb\u5ddd\u5317"), 334], [getTamaId("\u7acb\u5ddd\u5317"), 631], [getTamaId("\u7acb\u5ddd\u5317"), 671]);
 CROSS_TRANSFERS.push([getTamaId("\u7acb\u5ddd\u5357"), 334], [getTamaId("\u7acb\u5ddd\u5357"), 631], [getTamaId("\u7acb\u5ddd\u5357"), 671]);
 CROSS_TRANSFERS.push([getTamaId("\u591a\u6469\u30bb\u30f3\u30bf\u30fc"), 910]);
-
+// === KEISEI BRANCH LINE DATA (station order/distances from saved Wikipedia pages) ===
+const KEISEI_BRANCH_IDS = {};
+function keiseiBranchKey(code, name) { return code + "|" + name; }
+function getKeiseiBranchId(code, name) { return KEISEI_BRANCH_IDS[keiseiBranchKey(code, name)]; }
+function addKeiseiBranchRoute(code, rows) {
+  let prev = null;
+  for (const [name, distFromPrev] of rows) {
+    const key = keiseiBranchKey(code, name);
+    let id = KEISEI_BRANCH_IDS[key];
+    if (id == null) { id = S.length; KEISEI_BRANCH_IDS[key] = id; S.push([id, name, code]); }
+    if (prev != null && distFromPrev != null) EDGES.push([prev, id, distFromPrev]);
+    prev = id;
+  }
+}
+addKeiseiBranchRoute("KC", [["京成津田沼",null],["京成幕張本郷",2.1],["京成幕張",1.9],["検見川",1.3],["京成稲毛",2.8],["みどり台",1.8],["西登戸",1.0],["新千葉",0.8],["京成千葉",0.6],["千葉中央",0.6]]);
+addKeiseiBranchRoute("KG", [["京成高砂",null],["柴又",1.0],["京成金町",1.5]]);
+// Keisei branch different-name transfers.
+CROSS_TRANSFERS.push([getKeiseiBranchId("KC", "京成幕張本郷"), 373]);
+CROSS_TRANSFERS.push([getKeiseiBranchId("KC", "京成幕張"), 374]);
+CROSS_TRANSFERS.push([getKeiseiBranchId("KC", "京成稲毛"), 376], [getKeiseiBranchId("KC", "京成稲毛"), 510]);
+CROSS_TRANSFERS.push([getKeiseiBranchId("KC", "京成千葉"), 378], [getKeiseiBranchId("KC", "京成千葉"), 511]);
+CROSS_TRANSFERS.push([getKeiseiBranchId("KG", "京成金町"), 386]);
 // === FARE ZONES (Metro, with barrier-free surcharge, 2023) ===
 const FARE_ZONES = [
   { max: 6, ticket: 180, ic: 178 },
@@ -1397,11 +1433,34 @@ const KEISEI_FARE_ZONES = [
   {max:45,ic:618},{max:50,ic:681},{max:55,ic:743},
   {max:60,ic:796},{max:65,ic:859},{max:70,ic:912},
 ];
+const KEISEI_SPECIAL = {};
+function addKeiseiSpecial(a, b, ticket, ic) {
+  KEISEI_SPECIAL[[a,b].sort().join("|")] = { ticket, ic, special: true };
+}
+addKeiseiSpecial("京成幕張本郷", "京成千葉", 240, 231);
+addKeiseiSpecial("京成幕張本郷", "千葉中央", 240, 231);
+addKeiseiSpecial("八広", "菅野", 190, 189);
+addKeiseiSpecial("八広", "谷津", 330, 325);
+addKeiseiSpecial("八広", "ユーカリが丘", 500, 492);
+function getKeiseiSpecial(na, nb) {
+  return KEISEI_SPECIAL[[na,nb].sort().join("|")] || null;
+}
 function getKeiseiFare(km) {
   let ic = KEISEI_FARE_ZONES[KEISEI_FARE_ZONES.length-1].ic;
   for (const z of KEISEI_FARE_ZONES) { if (km <= z.max) { ic = z.ic; break; } }
   const ticket = Math.ceil(ic / 10) * 10;
   return { ticket: Math.ceil(ticket/2/10)*10, ic: Math.ceil(ic/2) };
+}
+
+// ゆりかもめ運賃（IC切捨て・きっぷ切上げで5割引）
+const YURIKAMOME_FARE_ZONES = [
+  {max:2,ic:189,ticket:190},{max:5,ic:251,ticket:260},
+  {max:8,ic:325,ticket:330},{max:15,ic:388,ticket:390},
+];
+function getYurikamomeFare(km) {
+  let z = YURIKAMOME_FARE_ZONES[YURIKAMOME_FARE_ZONES.length-1];
+  for (const fz of YURIKAMOME_FARE_ZONES) { if (km <= fz.max) { z = fz; break; } }
+  return { ticket: Math.ceil(z.ticket/2/10)*10, ic: Math.floor(z.ic/2) };
 }
 
 // 京王運賃（通常運賃、BFなし、障がい者割引なし）
@@ -1606,7 +1665,8 @@ const STATION_COORDS={0:[35.71074,139.79777],1:[35.70991,139.79035],2:[35.7114,1
 912:[35.61407,139.3798],913:[35.6018,139.36697],914:[35.59521,139.34354],915:[35.64436,139.33696],916:[35.64435,139.32076],917:[35.64364,139.30851],918:[35.64059,139.29365],919:[35.64166,139.28171],
 920:[35.63238,139.26982],921:[35.64964,139.40571],922:[35.66836,139.48517],923:[35.65855,139.69986],924:[35.65718,139.69325],925:[35.65867,139.68408],926:[35.66037,139.67345],927:[35.6616,139.66657],
 928:[35.6625,139.66139],929:[35.66264,139.65576],930:[35.66908,139.65038],931:[35.67623,139.64267],932:[35.67888,139.63516],933:[35.68158,139.62758],934:[35.68326,139.61523],935:[35.6848,139.60723],
-936:[35.68814,139.59933],937:[35.69205,139.5893],938:[35.69729,139.58312],939:[35.70229,139.58031]};
+936:[35.68814,139.59933],937:[35.69205,139.5893],938:[35.69729,139.58312],939:[35.70229,139.58031],
+940:[35.66558,139.75959],941:[35.66299,139.76008],942:[35.65407,139.76202],943:[35.64926,139.75916],944:[35.64222,139.75787],945:[35.62981,139.77853],946:[35.62587,139.77137],947:[35.62136,139.7731],948:[35.61773,139.77967],949:[35.6248,139.78132],950:[35.63021,139.7913],951:[35.63455,139.79334],952:[35.63998,139.7889],953:[35.64569,139.78565],954:[35.64871,139.79012],955:[35.65371,139.79544]};
 // === Tobu/Seibu station coordinates from N02-25_Station.geojson ===
 Object.assign(STATION_COORDS, {
   940:[35.71851,139.81667],941:[35.71032,139.82761],942:[35.70737,139.83159],943:[35.69994,139.83339],
@@ -2210,7 +2270,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
   for (const r of plateauRoutes(srcSet, dstSet, PLATEAU_LIMIT)) add(r);
   // 3) 運賃近似Dijkstra: 会社別バイアスを固定で何通りか試す
   //    （メトロ初乗り180円 vs JR短距離160円のように、会社で初乗りが違うため）
-  const OPS = ['metro', 'jr', 'tx', 'keisei', 'keio'];
+  const OPS = ['metro', 'jr', 'tx', 'keisei', 'keio', 'yurikamome'];
   add(fareApproxDijkstra(srcSet, dstSet, 0));
   for (const cheap of OPS) {
     const ow = {}; for (const o of OPS) ow[o] = (o === cheap) ? 0.3 : 1.5;
@@ -2302,6 +2362,11 @@ const CROSS_NAME_MAP = {
   "京成八幡": ["本八幡"], "本八幡": ["京成八幡"],
   "京成船橋": ["船橋"], "船橋": ["京成船橋"],
   "京成津田沼": ["津田沼"], "津田沼": ["京成津田沼"],
+  "京成幕張本郷": ["幕張本郷"], "幕張本郷": ["京成幕張本郷"],
+  "京成幕張": ["幕張"], "幕張": ["京成幕張"],
+  "京成稲毛": ["稲毛"], "稲毛": ["京成稲毛"],
+  "京成千葉": ["千葉"], "千葉": ["京成千葉"],
+  "京成金町": ["金町"], "金町": ["京成金町"],
   "京成西船": ["西船橋"], "西船橋": ["京成西船"],
   "新日本橋": ["三越前"], "三越前": ["新日本橋"],
   "馬喰町": ["東日本橋","馬喰横山"],
@@ -2384,7 +2449,7 @@ function calcRouteFare(path) {
   const ops = new Set();
   for (const sec of sections) {
     if (sec.end > sec.start) ops.add(sec.op);
-    if (sec.op !== "metro" && sec.op !== "jr" && sec.op !== "tx" && sec.op !== "keisei" && sec.op !== "keio" && sec.op !== "tobu" && sec.op !== "seibu" && sec.op !== "tama") continue;
+    if (sec.op !== "metro" && sec.op !== "jr" && sec.op !== "tx" && sec.op !== "keisei" && sec.op !== "keio" && sec.op !== "tobu" && sec.op !== "seibu" && sec.op !== "tama" && sec.op !== "yurikamome") continue;
     totalSections++;
     let dist = 0;
     for (let i = sec.start; i < sec.end; i++) {
@@ -2406,11 +2471,12 @@ function calcRouteFare(path) {
         else { fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(fareDist); }
         hasJR = true;
       } else if (sec.op === "tx") { fare = getTXFare(dist); }
-      else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
+      else if (sec.op === "keisei") { fare = getKeiseiSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getKeiseiFare(dist); }
       else if (sec.op === "keio") { fare = getKeioFare(dist); }
       else if (sec.op === "tobu") { fare = getTobuFare(dist); if (fare.discounted) hasTobuDiscount = true; }
       else if (sec.op === "seibu") { fare = getSeibuFare(dist); }
       else if (sec.op === "tama") { fare = getTamaFare(dist, S[path[sec.start]][1], S[path[sec.end]][1], sec.end - sec.start + 1); }
+      else if (sec.op === "yurikamome") { fare = getYurikamomeFare(dist); }
       else {
         // 特殊運賃区間
         const MEGURO_AREA = new Set(['目黒','白金台','白金高輪']);
@@ -2477,7 +2543,7 @@ function getTransferDiscount(metroSec, jrSec, path) {
 }
 
 // === UI ===
-const LINE_ORDER = ["G","M","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JV","JX","NT","SA","TX","KS","KO","KE","KR","KT","KZ","KB","IN","TS","TC","TDS","TN","TU","TG","TR","TK","TKR","TJ","TV","TP","SI","SC","SYU","STO","SSA","SS","SB","ST","SK","SSP","SW","SL","TT"];
+const LINE_ORDER = ["G","M","H","T","C","Y","Z","N","F","A","I","S","E","JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JV","JX","NT","SA","TX","KS","KO","KC","KG","KE","KR","KT","KZ","KB","IN","TS","TC","TDS","TN","TU","TG","TR","TK","TKR","TJ","TV","TP","SI","SC","SYU","STO","SSA","SS","SB","ST","SK","SSP","SW","SL","TT","UR"];
 const lineStations = {};
 for (const code of LINE_ORDER) {
   const stns = [];
@@ -3026,11 +3092,11 @@ function renderRoutes() {
     if (fi.metroFares.length > 1 || (fi.metroFares.length === 1 && !fi.allMetro)) {
       html += '<div class="fare-breakdown">';
       html += fi.metroFares.map(f => {
-        const tag = {jr:"JR",metro:"\u30e1\u30c8\u30ed",tx:"TX",keisei:"\u4eac\u6210",keio:"\u4eac\u738b",tobu:"\u6771\u6b66",seibu:"\u897f\u6b66",tama:"\u591a\u6469\u30e2\u30ce"}[f.op] || f.op;
+        const tag = {jr:"JR",metro:"\u30e1\u30c8\u30ed",tx:"TX",keisei:"\u4eac\u6210",keio:"\u4eac\u738b",tobu:"\u6771\u6b66",seibu:"\u897f\u6b66",tama:"\u591a\u6469\u30e2\u30ce",yurikamome:"\u3086\u308a\u304b\u3082\u3081"}[f.op] || f.op;
         const disc = f.fare.discounted ? ' <span style="color:#d32f2f;font-size:0.7rem">5割引</span>' : '';
         const oma = f.omawari ? ' <span style="color:#0089c7;font-size:0.7rem">最短' + f.fareDist + 'km</span>' : '';
         if (f.localLine) return tag + ' ' + f.from + '→' + f.to + ' <b style="color:#c66">計算不可(地方交通線)</b>';
-        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ic + '円</b>' + disc + oma;
+        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ic + '円</b> (' + f.dist + 'km)' + disc + oma;
       }).join(' ＋ ');
       html += '</div>';
     }
