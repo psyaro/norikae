@@ -31,7 +31,9 @@ body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; }
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const RADIUS_KM = 1.5;
+const savedForm = JSON.parse(localStorage.getItem('norikae-form') || '{}');
+const RADIUS_KM_FROM = savedForm.fromRadius ? parseFloat(savedForm.fromRadius) : 1.5;
+const RADIUS_KM_TO = savedForm.toRadius ? parseFloat(savedForm.toRadius) : 1.5;
 let mode = 'from';
 let chosen = { from: null, to: null };
 
@@ -47,14 +49,14 @@ let S, STATION_COORDS, LINES, HIDDEN_STATIONS, grpData;
   const sM = code.match(/const S = \[([\s\S]*?)\];/);
   S = eval('[' + sM[1] + ']');
   // STATION_COORDS
-  const cM = code.match(/(const STATION_COORDS=\{[\s\S]*?\});/);
-  eval(cM[1]);
+  const cM = code.match(/const STATION_COORDS=(\{[\s\S]*?\});/);
+  STATION_COORDS = eval('(' + cM[1] + ')');
   // LINES
-  const lM = code.match(/(const LINES = \{[\s\S]*?\});/);
-  eval(lM[1]);
+  const lM = code.match(/const LINES = (\{[\s\S]*?\});/);
+  LINES = eval('(' + lM[1] + ')');
   // HIDDEN_STATIONS
-  const hM = code.match(/(const HIDDEN_STATIONS = new Set\([^)]+\));/);
-  eval(hM[1]);
+  const hM = code.match(/const HIDDEN_STATIONS = (new Set\([^)]+\));/);
+  HIDDEN_STATIONS = eval(hM[1]);
 
   // Build grp (Union-Find for same-name + cross-transfers)
   const N = S.length;
@@ -121,6 +123,7 @@ function pickStation(name) {
 
 function pickArea(lat, lon) {
   const R = 6371;
+  const radiusKm = mode === 'from' ? RADIUS_KM_FROM : RADIUS_KM_TO;
   const nearby = [];
   for (const [idStr, [sLat, sLon]] of Object.entries(STATION_COORDS)) {
     const id = parseInt(idStr);
@@ -129,11 +132,11 @@ function pickArea(lat, lon) {
     const dLon = (sLon - lon) * Math.PI / 180;
     const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180)*Math.cos(sLat*Math.PI/180)*Math.sin(dLon/2)**2;
     const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    if (d <= RADIUS_KM) nearby.push(S[id][1]);
+    if (d <= radiusKm) nearby.push(S[id][1]);
   }
   const names = [...new Set(nearby)];
   if (names.length === 0) {
-    document.getElementById('status-text').textContent = '半径' + RADIUS_KM + 'km以内に駅がありません';
+    document.getElementById('status-text').textContent = '半径' + radiusKm + 'km以内に駅がありません';
     return;
   }
   chosen[mode] = { type: 'area', lat, lon, names };
@@ -151,11 +154,14 @@ function goSearch() {
   const f = chosen.from, t = chosen.to;
   if (!f || !t) return;
   // Pass to index.html via localStorage
-  const data = {};
-  if (f.type === 'station') { data.from = f.name; data.fromLine = ''; }
+  const data = JSON.parse(localStorage.getItem('norikae-form') || '{}');
+  
+  if (f.type === 'station') { data.from = f.name; data.fromLine = ''; delete data.fromArea; }
   else { data.from = '__area__'; data.fromArea = { lat: f.lat, lon: f.lon }; }
-  if (t.type === 'station') { data.to = t.name; data.toLine = ''; }
+  
+  if (t.type === 'station') { data.to = t.name; data.toLine = ''; delete data.toArea; }
   else { data.to = '__area__'; data.toArea = { lat: t.lat, lon: t.lon }; }
+  
   localStorage.setItem('norikae-form', JSON.stringify(data));
   location.href = 'index.html#search';
 }
