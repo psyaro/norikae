@@ -1455,11 +1455,20 @@ function calcRouteFare(path) {
       } else if (sec.op === "tx") { fare = getTXFare(dist); }
       else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
       else {
-        // 綾瀬〜北千住のみ: JR運賃扱い(160円/155円)、バリアフリー料金なし
+        // 特殊運賃区間
+        const MEGURO_AREA = new Set(['目黒','白金台','白金高輪']);
         const isAyaseKitasenju = sec.end - sec.start === 1
           && ((S[path[sec.start]][1] === '綾瀬' && S[path[sec.end]][1] === '北千住')
            || (S[path[sec.start]][1] === '北千住' && S[path[sec.end]][1] === '綾瀬'));
-        fare = isAyaseKitasenju ? { ticket: 160, ic: 155 } : getFare(dist);
+        // 南北線 目黒〜白金高輪区間内のみ: 固定180円/178円(BF込み)
+        let isMeguroArea = false;
+        if (S[path[sec.start]][2] === 'N') {
+          isMeguroArea = true;
+          for (let i = sec.start; i <= sec.end; i++) { if (!MEGURO_AREA.has(S[path[i]][1])) { isMeguroArea = false; break; } }
+        }
+        fare = isAyaseKitasenju ? { ticket: 160, ic: 155 }
+             : isMeguroArea ? { ticket: 180, ic: 178 }
+             : getFare(dist);
       }
       metroFares.push({ dist, fareDist, omawari, localLine, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
       if (fare.ticket >= 0) { totalTicket += fare.ticket; totalIC += fare.ic; }
