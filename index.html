@@ -1512,9 +1512,47 @@ function calcRouteFare(path) {
       paidSections++;
     }
   }
+  // メトロ↔JR乗継割引（ICカード利用時）
+  // 隣接するメトロ・JRセクションの接続駅が割引対象なら割引適用
+  let transferDiscount = 0;
+  for (let si = 0; si < sections.length - 1; si++) {
+    const a = sections[si], b = sections[si + 1];
+    let metroSec, jrSec;
+    if (a.op === 'metro' && b.op === 'jr') { metroSec = a; jrSec = b; }
+    else if (a.op === 'jr' && b.op === 'metro') { jrSec = a; metroSec = b; }
+    else continue;
+    const metroEnd = S[path[metroSec.end]][1], metroStart = S[path[metroSec.start]][1];
+    const jrEnd = S[path[jrSec.end]][1], jrStart = S[path[jrSec.start]][1];
+    const d = getTransferDiscount(metroSec, jrSec, path);
+    if (d > 0) transferDiscount += d;
+  }
+  if (transferDiscount > 0 && totalIC > 0) { totalIC -= transferDiscount; totalTicket -= transferDiscount; }
+
   const crossCompany = ops.size > 1;
   const allMetro = (metroFares.length === 1 && metroFares[0].op === "metro" && !crossCompany);
-  return { metroFares, totalTicket, totalIC, allMetro, hasJR, crossCompany };
+  return { metroFares, totalTicket, totalIC, allMetro, hasJR, crossCompany, transferDiscount };
+}
+
+// メトロ↔JR乗継割引テーブル
+const TRANSFER_DISCOUNTS = [
+  { hub: '中野', metroStns: new Set(['落合','高田馬場']), jrStns: new Set(['高円寺','阿佐ケ谷','荻窪','西荻窪','吉祥寺','三鷹']), amount: 20 },
+  { hub: '西船橋', metroStns: new Set(['行徳','妙典','原木中山']), jrStns: new Set(['船橋','東船橋','津田沼']), amount: 20 },
+  { hub: '西船橋', metroStns: new Set(['行徳','妙典','原木中山']), jrStns: new Set(['下総中山','船橋法典']), amount: 20 },
+  { hub: '綾瀬', metroStns: new Set(['北綾瀬','町屋','西日暮里']), jrStns: new Set(['亀有','金町']), amount: 10 },
+  { hub: '北千住', metroStns: new Set(['南千住','三ノ輪','北綾瀬','綾瀬','町屋','西日暮里']), jrStns: new Set(['亀有']), amount: 10 },
+];
+function getTransferDiscount(metroSec, jrSec, path) {
+  const mStns = new Set();
+  for (let i = metroSec.start; i <= metroSec.end; i++) mStns.add(S[path[i]][1]);
+  const jStns = new Set();
+  for (let i = jrSec.start; i <= jrSec.end; i++) jStns.add(S[path[i]][1]);
+  for (const d of TRANSFER_DISCOUNTS) {
+    let mMatch = false, jMatch = false;
+    for (const s of d.metroStns) if (mStns.has(s)) { mMatch = true; break; }
+    for (const s of d.jrStns) if (jStns.has(s)) { jMatch = true; break; }
+    if (mMatch && jMatch && (mStns.has(d.hub) || jStns.has(d.hub))) return d.amount;
+  }
+  return 0;
 }
 
 // === UI ===
@@ -1907,7 +1945,10 @@ function renderRoutes() {
     }
     html += '</div>';
 
-    if (fi.crossCompany) {
+    if (fi.transferDiscount > 0) {
+      html += '<div class="fare-breakdown" style="color:#0089c7">乗継割引 -' + fi.transferDiscount + '円適用済</div>';
+    }
+    if (fi.crossCompany && !fi.transferDiscount) {
       html += '<div class="route-warn">⚠ 他社線乗り換えあり（連絡運輸・乗継割引が別途設定されている場合があります）</div>';
     }
     if (fi.hasJR) {
