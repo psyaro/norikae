@@ -1082,6 +1082,41 @@ function plateauRoutes(srcSet, dstSet, limit) {
   return result;
 }
 
+// === 運賃近似Dijkstra ===
+// 辺重みを「運賃への寄与」にする: 都営(無料)≈0、有料会社=実距離。
+// これで最短探索すると「都営多用・有料区間最小」の安い経路が出やすい。
+// jitter>0 で辺重みにランダムノイズを加え、回すたびに違う経路を出す（物量探索用）。
+function fareApproxDijkstra(srcSet, dstSet, jitter, opWeight) {
+  // opWeight: 会社ごとの重み係数。会社別の運賃曲線の違い（初乗り額の差など）を
+  // 距離だけでは捉えられないため、会社の魅力度をランダムに変えて多様な組み合わせを探る。
+  opWeight = opWeight || {};
+  const dist = new Float64Array(N).fill(Infinity);
+  const real = new Float64Array(N).fill(Infinity);
+  const prev = new Int32Array(N).fill(-1);
+  const heap = [];
+  for (const s of srcSet) { dist[s] = 0; real[s] = 0; hPush(heap, [0, s]); }
+  while (heap.length > 0) {
+    const [d, u] = hPop(heap);
+    if (d > dist[u]) continue;
+    for (const { to: v, w } of adj[u]) {
+      let fw;
+      if (w === 0) fw = 0.3; // 乗換コスト（初乗り重複の近似、無駄な乗換を抑制）
+      else {
+        const op = operatorOf(S[u][2]);
+        fw = (op === 'toei') ? 0.05 : w * (opWeight[op] || 1);
+      }
+      if (jitter) fw *= (1 + (Math.random() * 2 - 1) * jitter);
+      const nd = d + fw;
+      if (nd < dist[v]) { dist[v] = nd; real[v] = real[u] + w; prev[v] = u; hPush(heap, [nd, v]); }
+    }
+  }
+  let bd = Infinity, bn = -1;
+  for (const t of dstSet) if (dist[t] < bd) { bd = dist[t]; bn = t; }
+  if (bn === -1) return null;
+  const path = []; let c = bn; while (c !== -1) { path.push(c); c = prev[c]; } path.reverse();
+  return { distance: Math.round(real[bn] * 10) / 10, path };
+}
+
 function findKRoutes(fromName, toName) {
   const srcIds = nameToIds[fromName];
   const dstIds = nameToIds[toName];
@@ -1094,14 +1129,39 @@ function findKRoutes(fromName, toName) {
   const t0 = performance.now();
   const K = 6;          // 最大乗換回数（ラウンド数）
   const PLATEAU_LIMIT = 120;
+  const TIMEOUT = 1500;
 
-  // RAPTOR風: 乗換回数別の最短経路（主要候補）
-  const pool = roundShortest(srcSet, dstSet, K);
-  // Plateau法: 構造的に異なる代替経路
-  for (const r of plateauRoutes(srcSet, dstSet, PLATEAU_LIMIT)) pool.push(r);
+  // 経路プール（pathKeyで重複排除しながら収集）
+  const pool = [];
+  const seen = new Set();
+  function add(r) {
+    if (!r || r.path.length < 2) return;
+    cleanPath(r.path);
+    const k = r.path.join(',');
+    if (seen.has(k)) return;
+    seen.add(k);
+    pool.push(r);
+  }
 
-  // 経路正規化
-  for (const r of pool) cleanPath(r.path);
+  // 1) RAPTOR風: 乗換回数別の最短経路（距離Pareto）
+  for (const r of roundShortest(srcSet, dstSet, K)) add(r);
+  // 2) Plateau法: 構造的に異なる代替経路
+  for (const r of plateauRoutes(srcSet, dstSet, PLATEAU_LIMIT)) add(r);
+  // 3) 運賃近似Dijkstra: 会社別バイアスを固定で何通りか試す
+  //    （メトロ初乗り180円 vs JR短距離160円のように、会社で初乗りが違うため）
+  const OPS = ['metro', 'jr', 'tx', 'keisei'];
+  add(fareApproxDijkstra(srcSet, dstSet, 0));
+  for (const cheap of OPS) {
+    const ow = {}; for (const o of OPS) ow[o] = (o === cheap) ? 0.3 : 1.5;
+    add(fareApproxDijkstra(srcSet, dstSet, 0, ow));
+  }
+  // 4) 運賃近似 + 会社重みランダム化 + ジッターを時間予算まで物量で回す
+  while (performance.now() - t0 < TIMEOUT) {
+    for (let i = 0; i < 20; i++) {
+      const ow = {}; for (const o of OPS) ow[o] = 0.3 + Math.random() * 2;
+      add(fareApproxDijkstra(srcSet, dstSet, 0.3, ow));
+    }
+  }
 
   const searchMs = Math.round(performance.now() - t0);
 
@@ -1389,7 +1449,7 @@ function calculate() {
     if (!lastRoutes.length) { showError('経路が見つかりませんでした'); return; }
     lastFromName = fromName;
     lastToName = toName;
-    currentSort = 'recommend';
+    currentSort = 'price';
     displayCount = 30;
     renderRoutes();
   }, 20);
