@@ -1128,22 +1128,16 @@ function findKRoutes(fromName, toName) {
   for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc));
   for (const tc of TC_ALL) tryAdd(dijkstraP(srcSet, dstSet, new Map(), tc, 0));
 
-  // Phase 1b: via-point search — force routes through each cross-company transfer
-  // Collect all cross-company station pairs (same-name + cross-name) by grp
+  // Phase 1b: via-point search — force routes through each cross-company transfer.
+  // 直接エッジ(0距離乗換)がある異会社ペアのみを経由点にする。
+  // grpが同じでも直接繋がっていないペア（例: 御茶ノ水JR↔小川町、間に新御茶ノ水）は連結しない。
   const viaPairs = [];
-  const grpStations = new Map();
-  for (let i = 0; i < N; i++) {
-    const g = grp[i];
-    if (!grpStations.has(g)) grpStations.set(g, []);
-    grpStations.get(g).push(i);
-  }
-  for (const [g, ids] of grpStations) {
-    if (srcGrps.has(g) || dstGrps.has(g)) continue;
-    for (let a = 0; a < ids.length; a++) {
-      for (let b = a + 1; b < ids.length; b++) {
-        if (operatorOf(S[ids[a]][2]) !== operatorOf(S[ids[b]][2])) {
-          viaPairs.push([ids[a], ids[b]]);
-        }
+  for (let u = 0; u < N; u++) {
+    if (srcGrps.has(grp[u]) || dstGrps.has(grp[u])) continue;
+    for (const e of adj[u]) {
+      const v = e.to;
+      if (e.w === 0 && u < v && operatorOf(S[u][2]) !== operatorOf(S[v][2])) {
+        viaPairs.push([u, v]);
       }
     }
   }
