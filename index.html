@@ -2714,20 +2714,16 @@ function restoreArea(prefix, saved) {
   }
   if (saved && saved.from && (nameToIds[saved.from] || saved.from === '__area__')) {
     if (!restoreArea('from', saved)) {
-      if (saved.fromLine && LINES[saved.fromLine]) document.getElementById("from-line").value = saved.fromLine;
       updateStations("from");
       document.getElementById("from").value = saved.from;
     }
     if (!restoreArea('to', saved)) {
-      if (saved.toLine && LINES[saved.toLine]) document.getElementById("to-line").value = saved.toLine;
       updateStations("to");
       document.getElementById("to").value = saved.to || "";
     }
   } else {
-    document.getElementById("from-line").value = "M";
     updateStations("from");
     document.getElementById("from").value = "東京";
-    document.getElementById("to-line").value = "M";
     updateStations("to");
     document.getElementById("to").value = "新宿";
   }
@@ -2828,8 +2824,8 @@ function calculate() {
   localStorage.setItem('norikae-form', JSON.stringify({
     from: fromName,
     to: toName,
-    fromLine: document.getElementById("from-line").value,
-    toLine: document.getElementById("to-line").value,
+    fromLine: '',
+    toLine: '',
     fromRadius: document.getElementById("from-radius").value,
     toRadius: document.getElementById("to-radius").value,
     fromArea: fromArea,
