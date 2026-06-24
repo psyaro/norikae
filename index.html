@@ -1298,7 +1298,7 @@ function findKRoutes(fromName, toName) {
     r.stops = visited.size;
     const fi = calcRouteFare(r.path);
     r.fareInfo = fi;
-    r.price = fi.totalTicket;
+    r.price = fi.totalIC;
     let paidCross = 0, toeiCross = 0;
     for (let i = 1; i < r.path.length; i++) {
       const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
@@ -1727,7 +1727,7 @@ function calculate() {
         r.stops = visited.size;
         const fi = calcRouteFare(r.path);
         r.fareInfo = fi;
-        r.price = fi.totalTicket;
+        r.price = fi.totalIC;
         let paidCross = 0, toeiCross = 0;
         for (let i = 1; i < r.path.length; i++) {
           const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
@@ -1823,11 +1823,11 @@ function renderRoutes() {
     html += '<div class="route-header">';
     html += '<span class="route-num">' + (ri + 1) + '</span>';
 
-    if (fi.totalTicket < 0) {
+    if (fi.totalIC < 0) {
       html += '<span class="route-fare" style="color:#c66">運賃計算不可</span>';
     } else if (fi.metroFares.length > 0) {
-      html += '<span class="route-fare">' + fi.totalTicket + '円</span>';
-      html += '<span class="route-ic">IC ' + fi.totalIC + '円</span>';
+      html += '<span class="route-fare">IC ' + fi.totalIC + '円</span>';
+      html += '<span class="route-ic">きっぷ ' + fi.totalTicket + '円</span>';
     } else {
       html += '<span class="route-fare" style="color:#888">運賃計算対象なし</span>';
     }
@@ -1844,7 +1844,7 @@ function renderRoutes() {
         const disc = f.fare.discounted ? ' <span style="color:#d32f2f;font-size:0.7rem">5割引</span>' : '';
         const oma = f.omawari ? ' <span style="color:#0089c7;font-size:0.7rem">最短' + f.fareDist + 'km</span>' : '';
         if (f.localLine) return tag + ' ' + f.from + '→' + f.to + ' <b style="color:#c66">計算不可(地方交通線)</b>';
-        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>' + disc + oma;
+        return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ic + '円</b>' + disc + oma;
       }).join(' ＋ ');
       html += '</div>';
     }
