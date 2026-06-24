@@ -1116,7 +1116,7 @@ function roundShortest(srcSet, dstSet, K) {
     if (d > labels[k][u]) continue;
     for (const { to: v, w } of adj[u]) {
       let nk = k;
-      if (w === 0 && isTransferEdge(u, v)) nk = k + 1;
+      if (isTransferEdge(u, v) && w === 0) nk = k + 1;
       if (nk > K) continue;
       const nd = d + w;
       if (nd < labels[nk][v]) { labels[nk][v] = nd; prev[nk][v] = u; hPush(heap, [nd, v, nk]); }
@@ -1136,7 +1136,10 @@ function roundShortest(srcSet, dstSet, K) {
       while (c !== -1) {
         path.push(c);
         const p = prev[ck][c];
-        if (p !== -1 && isTransferEdge(p, c)) ck--;
+        if (p !== -1 && isTransferEdge(p, c)) {
+          const ew = adj[p].find(e => e.to === c);
+          if (ew && ew.w === 0) ck--;
+        }
         c = p;
       }
       path.reverse();
