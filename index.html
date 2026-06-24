@@ -372,6 +372,7 @@ const METRO_LINES = new Set(["G","M","Mb","H","T","C","Y","Z","N","F"]);
 function isMetro(lineCode) { return METRO_LINES.has(lineCode); }
 const TOEI_LINES = new Set(["A","I","S","E"]);
 const JR_LINES = new Set(["JY","JC","JB","JJ","JE","JO","JM","JT","JK","JN","JH","JA","JQ","JW","JP","JD","JU","JNs","JI","JL","JG","JEf","JEk","JV","JX"]);
+const LOCAL_JR_LINES = new Set(["JP"]); // 地方交通線（幹線と運賃が異なる、運賃計算未対応）
 const TX_LINES = new Set(["TX"]);
 const KEISEI_LINES = new Set(["KS","KO"]);
 function operatorOf(lineCode) {
@@ -1445,9 +1446,11 @@ function calcRouteFare(path) {
         const sd = jrShortestDist(path[sec.start], path[sec.end]);
         if (sd >= 0 && sd < dist) { fareDist = sd; omawari = true; }
       }
-      let fare;
+      let fare, localLine = false;
       if (sec.op === "jr") {
-        fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(fareDist);
+        for (let i = sec.start; i <= sec.end; i++) { if (LOCAL_JR_LINES.has(S[path[i]][2])) { localLine = true; break; } }
+        if (localLine) { fare = { ticket: -1, ic: -1 }; }
+        else { fare = getJRSpecial(S[path[sec.start]][1], S[path[sec.end]][1]) || getJRFare(fareDist); }
         hasJR = true;
       } else if (sec.op === "tx") { fare = getTXFare(dist); }
       else if (sec.op === "keisei") { fare = getKeiseiFare(dist); }
@@ -1458,9 +1461,9 @@ function calcRouteFare(path) {
            || (S[path[sec.start]][1] === '北千住' && S[path[sec.end]][1] === '綾瀬'));
         fare = isAyaseKitasenju ? { ticket: 160, ic: 155 } : getFare(dist);
       }
-      metroFares.push({ dist, fareDist, omawari, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
-      totalTicket += fare.ticket;
-      totalIC += fare.ic;
+      metroFares.push({ dist, fareDist, omawari, localLine, fare, op: sec.op, line: S[path[sec.start]][2], from: S[path[sec.start]][1], to: S[path[sec.end]][1] });
+      if (fare.ticket >= 0) { totalTicket += fare.ticket; totalIC += fare.ic; }
+      else { totalTicket = -1; totalIC = -1; }
       paidSections++;
     }
   }
@@ -1820,7 +1823,9 @@ function renderRoutes() {
     html += '<div class="route-header">';
     html += '<span class="route-num">' + (ri + 1) + '</span>';
 
-    if (fi.metroFares.length > 0) {
+    if (fi.totalTicket < 0) {
+      html += '<span class="route-fare" style="color:#c66">運賃計算不可</span>';
+    } else if (fi.metroFares.length > 0) {
       html += '<span class="route-fare">' + fi.totalTicket + '円</span>';
       html += '<span class="route-ic">IC ' + fi.totalIC + '円</span>';
     } else {
@@ -1838,6 +1843,7 @@ function renderRoutes() {
         const tag = {jr:"JR",metro:"メトロ",tx:"TX",keisei:"京成"}[f.op] || f.op;
         const disc = f.fare.discounted ? ' <span style="color:#d32f2f;font-size:0.7rem">5割引</span>' : '';
         const oma = f.omawari ? ' <span style="color:#0089c7;font-size:0.7rem">最短' + f.fareDist + 'km</span>' : '';
+        if (f.localLine) return tag + ' ' + f.from + '→' + f.to + ' <b style="color:#c66">計算不可(地方交通線)</b>';
         return tag + ' ' + f.from + '→' + f.to + ' <b>' + f.fare.ticket + '円</b>' + disc + oma;
       }).join(' ＋ ');
       html += '</div>';
