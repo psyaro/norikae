@@ -2248,7 +2248,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
     r.stops = visited.size;
     const fi = calcRouteFare(r.path);
     r.fareInfo = fi;
-    r.price = fi.totalIC;
+    r.price = fi.totalIC < 0 ? Infinity : fi.totalIC;
     let paidCross = 0, toeiCross = 0;
     for (let i = 1; i < r.path.length; i++) {
       const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
@@ -2905,7 +2905,7 @@ function calculate() {
         r.stops = visited.size;
         const fi = calcRouteFare(r.path);
         r.fareInfo = fi;
-        r.price = fi.totalIC;
+        r.price = fi.totalIC < 0 ? Infinity : fi.totalIC;
         let paidCross = 0, toeiCross = 0;
         for (let i = 1; i < r.path.length; i++) {
           const opA = operatorOf(S[r.path[i-1]][2]), opB = operatorOf(S[r.path[i]][2]);
@@ -2981,6 +2981,7 @@ function renderRoutes() {
   summaryEl.innerHTML = allStops + '<br><span style="font-size:0.75rem;color:#aaa">' + ms + '</span>';
   displayedSorted = [...lastRoutes];
   if (currentSort === 'price' && displayedSorted.length > 1) {
+    displayedSorted = displayedSorted.filter(r => r.price !== Infinity);
     const minDist = Math.min(...displayedSorted.map(r => r.distance));
     displayedSorted = displayedSorted.filter(r => r.distance <= minDist * 3);
   }
@@ -3008,7 +3009,8 @@ function renderRoutes() {
     const segments = getSegments(r.path);
     const fi = r.fareInfo;
 
-    html += '<div class="route-card' + (ri === 0 ? ' best' : '') + '">';
+    const isBest = ri === 0 && r.price !== Infinity;
+    html += '<div class="route-card' + (isBest ? ' best' : '') + '">';
     html += '<div class="route-header">';
     html += '<span class="route-num">' + (ri + 1) + '</span>';
 
