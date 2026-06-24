@@ -2238,7 +2238,7 @@ function findKRoutes(fromName, toName, overrideSrc, overrideDst) {
   const searchMs = Math.round(performance.now() - t0);
 
   // 素通り乗換を除外し、空・自明な経路も弾く
-  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path) && !hasLoopback(r.path) && countBusRides(r.path) <= BUS_MAX_RIDES);
+  const filtered = pool.filter(r => r.path.length >= 2 && !hasPassthroughTransfer(r.path) && !hasLoopback(r.path) && countBusRides(r.path) <= BUS_MAX_RIDES && !r.path.some(id => LOCAL_JR_LINES.has(S[id][2])));
 
   // Enrich with metadata
   for (const r of filtered) {
@@ -2920,7 +2920,7 @@ function calculate() {
       // dedup by shape+dist+transfers
       const byKey = new Map();
       for (const r of merged) {
-        if (hasPassthroughTransfer(r.path) || hasLoopback(r.path) || countBusRides(r.path) > BUS_MAX_RIDES) continue;
+        if (hasPassthroughTransfer(r.path) || hasLoopback(r.path) || countBusRides(r.path) > BUS_MAX_RIDES || r.path.some(id => LOCAL_JR_LINES.has(S[id][2]))) continue;
         const key = routeShape(r.path) + '|' + r.distance.toFixed(1) + '|' + r.transfers;
         const prev = byKey.get(key);
         if (!prev || r.stops < prev.stops) byKey.set(key, r);
