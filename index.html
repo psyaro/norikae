@@ -3523,18 +3523,10 @@ function buildRouteHtml(path) {
 }
 
 function drawRouteMap(canvas, path) {
-  // 各ノードは自身の座標を使う。乗換辺（同一grp隣接）のみ後ろのノードを前に合わせる。
-  const rawPts = path.map(id => {
+  const pts = path.map(id => {
     const c = STATION_COORDS[id];
     return c ? { id, lat: c[0], lon: c[1], line: S[id][2] } : null;
   }).filter(Boolean);
-  for (let i = 1; i < rawPts.length; i++) {
-    if (grp[rawPts[i].id] === grp[rawPts[i-1].id]) {
-      rawPts[i].lat = rawPts[i-1].lat;
-      rawPts[i].lon = rawPts[i-1].lon;
-    }
-  }
-  const pts = rawPts;
   if (pts.length < 2) return;
 
   const dpr = window.devicePixelRatio || 1;
@@ -3558,12 +3550,13 @@ function drawRouteMap(canvas, path) {
   function toX(lon) { return pad + (lon - minLon) / dLon * (W - 2 * pad); }
   function toY(lat) { return pad + (maxLat - lat) / dLat * (H - 2 * pad); }
 
-  // Draw segments colored by line
+  // Draw segments colored by line (skip transfer edges between same grp)
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
+    if (grp[a.id] === grp[b.id]) continue; // 乗換辺は描画しない
     ctx.beginPath();
     ctx.strokeStyle = LINES[a.line] ? LINES[a.line].color : '#94a3b8';
     ctx.moveTo(toX(a.lon), toY(a.lat));
