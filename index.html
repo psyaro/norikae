@@ -3523,17 +3523,18 @@ function buildRouteHtml(path) {
 }
 
 function drawRouteMap(canvas, path) {
-  // 同一grp(乗換駅)は同じ座標に統一し、描画のズレを防ぐ
-  const grpCoord = {};
-  for (const id of path) {
-    const g = grp[id], c = STATION_COORDS[id];
-    if (c && !grpCoord[g]) grpCoord[g] = c;
+  // 各ノードは自身の座標を使う。乗換辺（同一grp隣接）のみ後ろのノードを前に合わせる。
+  const rawPts = path.map(id => {
+    const c = STATION_COORDS[id];
+    return c ? { id, lat: c[0], lon: c[1], line: S[id][2] } : null;
+  }).filter(Boolean);
+  for (let i = 1; i < rawPts.length; i++) {
+    if (grp[rawPts[i].id] === grp[rawPts[i-1].id]) {
+      rawPts[i].lat = rawPts[i-1].lat;
+      rawPts[i].lon = rawPts[i-1].lon;
+    }
   }
-  const pts = [];
-  for (const id of path) {
-    const c = grpCoord[grp[id]] || STATION_COORDS[id];
-    if (c) pts.push({ id, lat: c[0], lon: c[1], line: S[id][2] });
-  }
+  const pts = rawPts;
   if (pts.length < 2) return;
 
   const dpr = window.devicePixelRatio || 1;
