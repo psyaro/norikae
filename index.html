@@ -3537,6 +3537,21 @@ function drawRouteMap(canvas, path) {
   }
   if (pts.length < 2) return;
 
+  // 乗換駅(同一grpの連続ノード)は重心に揃え、GeoJSONのホーム位置差による
+  // 押上などの不自然なズレを解消する。
+  let i0 = 0;
+  while (i0 < pts.length) {
+    let i1 = i0;
+    while (i1 + 1 < pts.length && grp[pts[i1 + 1].id] === grp[pts[i0].id]) i1++;
+    if (i1 > i0) {
+      let sLat = 0, sLon = 0;
+      for (let k = i0; k <= i1; k++) { sLat += pts[k].lat; sLon += pts[k].lon; }
+      const aLat = sLat / (i1 - i0 + 1), aLon = sLon / (i1 - i0 + 1);
+      for (let k = i0; k <= i1; k++) { pts[k].lat = aLat; pts[k].lon = aLon; }
+    }
+    i0 = i1 + 1;
+  }
+
   // 1) 緯度経度 → ピクセル座標に一括変換
   const cosLat = Math.cos(pts[0].lat * Math.PI / 180);
   const xs = pts.map(p => p.lon * cosLat);
