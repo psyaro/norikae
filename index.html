@@ -3430,6 +3430,13 @@ function getSubSegments(path) {
   return merged;
 }
 
+function stationMapLink(id) {
+  const c = STATION_COORDS[id];
+  const name = escHtml(S[id][1]);
+  if (!c) return name;
+  return '<a href="https://www.google.com/maps?q=' + c[0] + ',' + c[1] + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline dotted;text-underline-offset:2px">' + name + '</a>';
+}
+
 function buildRouteHtml(path) {
   if (path.length === 0) return "";
   const famSegments = getSegments(path);
@@ -3479,16 +3486,16 @@ function buildRouteHtml(path) {
           const prevLast = prevSeg.stations[prevSeg.stations.length-1];
           const prevLastLine = S[prevLast][2];
           const pc = LINES[prevLastLine].color;
-          html += escHtml(S[prevLast][1]);
+          html += stationMapLink(prevLast);
           html += '<span class="line-badge" style="background:' + pc + '">' + LINES[prevLastLine].name + '</span>';
           html += '<span class="route-arrow" style="font-size:0.7rem;vertical-align:middle">→</span>';
-          html += escHtml(S[first][1]);
+          html += stationMapLink(first);
           html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
           html += '<span class="route-transfer">乗換</span>';
           const farNote = getFarNote(prevLast, first);
           if (farNote) html += '<div class="far-note">⚠ ' + escHtml(farNote) + '</div>';
         } else {
-          html += escHtml(S[first][1]);
+          html += stationMapLink(first);
           html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
         }
         html += '</div></div>';
@@ -3511,7 +3518,7 @@ function buildRouteHtml(path) {
         if (!isLastTransfer) {
           html += '<div class="route-station">';
           html += '<div class="route-dot" style="border-color:' + c + '"></div>';
-          html += '<div class="route-name">' + escHtml(S[last][1]);
+          html += '<div class="route-name">' + stationMapLink(last);
           html += '<span class="line-badge" style="background:' + c + '">' + li.name + '</span>';
           html += '</div></div>';
         }
