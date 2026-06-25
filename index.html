@@ -3561,17 +3561,20 @@ function drawRouteMap(canvas, path) {
   function toX(lon) { return ox + (lon - minLon) * cosLat * scale; }
   function toY(lat) { return oy + (maxLat - lat) * scale; }
 
-  // 路線セグメント描画（乗換辺はスキップ）
-  ctx.lineWidth = 3.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // 路線セグメント描画
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    if (grp[a.id] === grp[b.id]) continue;
+    const isTransfer = grp[a.id] === grp[b.id];
     ctx.beginPath();
-    ctx.strokeStyle = LINES[a.line] ? LINES[a.line].color : '#94a3b8';
+    ctx.lineWidth = isTransfer ? 1.5 : 3.5;
+    ctx.setLineDash(isTransfer ? [3, 4] : []);
+    ctx.strokeStyle = isTransfer ? '#94a3b8' : (LINES[a.line] ? LINES[a.line].color : '#94a3b8');
     ctx.moveTo(toX(a.lon), toY(a.lat));
     ctx.lineTo(toX(b.lon), toY(b.lat));
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   // 乗換・始終点のドット
   const transfers = new Set();
