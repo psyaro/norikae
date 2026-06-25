@@ -3523,7 +3523,6 @@ function buildRouteHtml(path) {
 }
 
 function drawRouteMap(canvas, path) {
-  // 各駅の緯度経度をそのまま使い、bbox基準でスケーリング
   const pts = [];
   for (const id of path) {
     const c = STATION_COORDS[id];
@@ -3531,89 +3530,77 @@ function drawRouteMap(canvas, path) {
   }
   if (pts.length < 2) return;
 
-  // bbox
-  let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
-  for (const p of pts) {
-    if (p.lat < minLat) minLat = p.lat; if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon; if (p.lon > maxLon) maxLon = p.lon;
-  }
-  // 余白を10%追加
-  const mLat = (maxLat - minLat) * 0.12 || 0.002;
-  const mLon = (maxLon - minLon) * 0.12 || 0.002;
-  minLat -= mLat; maxLat += mLat; minLon -= mLon; maxLon += mLon;
-
-  // 緯度補正した実距離ベースでスケーリング
-  const cosLat = Math.cos((minLat + maxLat) / 2 * Math.PI / 180);
-  const spanX = (maxLon - minLon) * cosLat; // 経度方向の実スケール
-  const spanY = maxLat - minLat;             // 緯度方向の実スケール
+  // 1) 緯度経度 → ピクセル座標に一括変換
+  const cosLat = Math.cos(pts[0].lat * Math.PI / 180);
+  const xs = pts.map(p => p.lon * cosLat);
+  const ys = pts.map(p => -p.lat); // 北が上
+  let xMin = Math.min(...xs), xMax = Math.max(...xs);
+  let yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const dx = xMax - xMin || 0.0001, dy = yMax - yMin || 0.0001;
 
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth;
-  const H = Math.max(140, Math.min(320, Math.round(W * spanY / spanX)));
+  const H = Math.max(140, Math.min(320, Math.round(W * dy / dx)));
   canvas.style.height = H + 'px';
   canvas.width = W * dpr; canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  const scale = Math.min(W / spanX, H / spanY);
-  const ox = (W - spanX * scale) / 2;
-  const oy = (H - spanY * scale) / 2;
-  function toX(lon) { return ox + (lon - minLon) * cosLat * scale; }
-  function toY(lat) { return oy + (maxLat - lat) * scale; }
+  const pad = 30;
+  const s = Math.min((W - pad * 2) / dx, (H - pad * 2) / dy);
+  const cx = (W - dx * s) / 2, cy = (H - dy * s) / 2;
 
-  // 路線セグメント描画
+  // 描画座標を事前計算
+  for (let i = 0; i < pts.length; i++) {
+    pts[i].x = cx + (xs[i] - xMin) * s;
+    pts[i].y = cy + (ys[i] - yMin) * s;
+  }
+
+  // 2) 線を描画
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    const isTransfer = grp[a.id] === grp[b.id];
+    const tr = grp[a.id] === grp[b.id];
     ctx.beginPath();
-    ctx.lineWidth = isTransfer ? 1.5 : 3.5;
-    ctx.setLineDash(isTransfer ? [3, 4] : []);
-    ctx.strokeStyle = isTransfer ? '#94a3b8' : (LINES[a.line] ? LINES[a.line].color : '#94a3b8');
-    ctx.moveTo(toX(a.lon), toY(a.lat));
-    ctx.lineTo(toX(b.lon), toY(b.lat));
+    ctx.lineWidth = tr ? 1.5 : 3.5;
+    ctx.setLineDash(tr ? [3, 4] : []);
+    ctx.strokeStyle = tr ? '#aaa' : (LINES[a.line] ? LINES[a.line].color : '#888');
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
   ctx.setLineDash([]);
 
-  // 乗換・始終点のドット
-  const transfers = new Set();
+  // 3) 始終点・乗換ドット
+  const trSet = new Set();
   for (let i = 1; i < pts.length; i++) {
-    if (grp[pts[i].id] === grp[pts[i-1].id] && pts[i].line !== pts[i-1].line) {
-      transfers.add(i); transfers.add(i-1);
-    }
+    if (grp[pts[i].id] === grp[pts[i-1].id] && pts[i].line !== pts[i-1].line) { trSet.add(i); trSet.add(i-1); }
   }
   for (let i = 0; i < pts.length; i++) {
-    const p = pts[i], isEnd = i === 0 || i === pts.length - 1, isTr = transfers.has(i);
+    const p = pts[i], isEnd = i === 0 || i === pts.length - 1, isTr = trSet.has(i);
     if (!isEnd && !isTr) continue;
     ctx.beginPath();
-    ctx.arc(toX(p.lon), toY(p.lat), isEnd ? 5.5 : 4, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, isEnd ? 5 : 3.5, 0, Math.PI * 2);
     ctx.fillStyle = isEnd ? '#ef4444' : '#fff';
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = isEnd ? '#b91c1c' : LINES[p.line] ? LINES[p.line].color : '#94a3b8';
+    ctx.strokeStyle = isEnd ? '#b91c1c' : (LINES[p.line] ? LINES[p.line].color : '#888');
     ctx.stroke();
   }
 
-  // ラベル（始点・終点・乗換駅）
-  ctx.font = '600 11px Inter, sans-serif'; ctx.textBaseline = 'middle';
+  // 4) ラベル
+  ctx.font = '600 11px Inter, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
   const labeled = new Set();
   for (let i = 0; i < pts.length; i++) {
-    if (i !== 0 && i !== pts.length - 1 && !transfers.has(i)) continue;
-    const g = grp[pts[i].id];
-    if (labeled.has(g)) continue;
-    labeled.add(g);
-    const name = S[pts[i].id][1];
-    const x = toX(pts[i].lon), y = toY(pts[i].lat);
+    if (i !== 0 && i !== pts.length - 1 && !trSet.has(i)) continue;
+    const g = grp[pts[i].id]; if (labeled.has(g)) continue; labeled.add(g);
+    const name = S[pts[i].id][1], x = pts[i].x, y = pts[i].y;
     const tw = ctx.measureText(name).width;
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.strokeStyle = 'rgba(200,200,200,0.6)'; ctx.lineWidth = 1;
-    const lx = x - tw / 2 - 5, ly = y - 22, lw = tw + 10, lh = 15;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = 'rgba(200,200,200,0.6)'; ctx.lineWidth = 1;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(lx, ly, lw, lh, 3); else ctx.rect(lx, ly, lw, lh);
+    if (ctx.roundRect) ctx.roundRect(x - tw/2 - 4, y - 21, tw + 8, 15, 3);
+    else ctx.rect(x - tw/2 - 4, y - 21, tw + 8, 15);
     ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#0f172a'; ctx.textAlign = 'center';
-    ctx.fillText(name, x, y - 14.5);
+    ctx.fillStyle = '#0f172a'; ctx.fillText(name, x, y - 13.5);
   }
 }
 
