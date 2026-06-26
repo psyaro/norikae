@@ -42,35 +42,56 @@ let S, STATION_COORDS, LINES, HIDDEN_STATIONS, grpData;
 
 (async () => {
   const text = await (await fetch('index.html')).text();
-  const m = text.match(/<script>([\s\S]*)<\/script>/);
-  // Extract what we need via eval in isolated scope
-  const code = m[1];
-  // S array
-  const sM = code.match(/const S = \[([\s\S]*?)\];/);
-  S = eval('[' + sM[1] + ']');
-  // STATION_COORDS
-  const cM = code.match(/const STATION_COORDS=(\{[\s\S]*?\});/);
-  STATION_COORDS = eval('(' + cM[1] + ')');
-  // LINES
-  const lM = code.match(/const LINES = (\{[\s\S]*?\});/);
-  LINES = eval('(' + lM[1] + ')');
-  // HIDDEN_STATIONS
-  const hM = code.match(/const HIDDEN_STATIONS = (new Set\([^)]+\));/);
-  HIDDEN_STATIONS = eval(hM[1]);
+  const m = text.match(/<script>([\s\S]*?)<\/script>/);
+  if (!m) throw new Error("Failed to load script from index.html");
+
+  // UI定義の手前までのデータ初期化ロジックを抽出
+  const appScript = m[1].split('// === UI ===')[0];
+
+  // 必要な変数をグローバルにエクスポートするコードを追加してeval実行
+  const exportCode = `
+    window.__app_data = {
+      S,
+      STATION_COORDS,
+      LINES,
+      HIDDEN_STATIONS,
+      CROSS_TRANSFERS
+    };
+  `;
+
+  try {
+    (0, eval)(appScript + exportCode);
+  } catch (e) {
+    console.error("Failed to evaluate index.html script:", e);
+    document.getElementById('status-text').textContent = 'データ読み込みエラーが発生しました';
+    return;
+  }
+
+  const data = window.__app_data;
+  S = data.S;
+  STATION_COORDS = data.STATION_COORDS;
+  LINES = data.LINES;
+  HIDDEN_STATIONS = data.HIDDEN_STATIONS;
+  const CROSS_TRANSFERS = data.CROSS_TRANSFERS;
 
   // Build grp (Union-Find for same-name + cross-transfers)
   const N = S.length;
   const parent = Array.from({length: N}, (_, i) => i);
   function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
   function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
-  // Same-name
+
+  // Same-name (skip sparse undefined elements)
   const nameMap = {};
-  for (const [id, name] of S) { if (!nameMap[name]) nameMap[name] = []; nameMap[name].push(id); }
+  for (const item of S) {
+    if (!item) continue;
+    const [id, name] = item;
+    if (!nameMap[name]) nameMap[name] = [];
+    nameMap[name].push(id);
+  }
   for (const ids of Object.values(nameMap)) { for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]); }
-  // Cross-transfers (extract from code)
-  const ctM = code.match(/const CROSS_TRANSFERS = \[([\s\S]*?)\];/);
-  const crossPairs = [...ctM[1].matchAll(/\[(\d+),(\d+)\]/g)];
-  for (const [, a, b] of crossPairs) union(parseInt(a), parseInt(b));
+
+  // Cross-transfers
+  for (const [a, b] of CROSS_TRANSFERS) union(a, b);
   grpData = parent.map((_, i) => find(i));
 
   buildMap();
@@ -87,6 +108,7 @@ function buildMap() {
   const byGrp = {};
   for (const [idStr, [lat, lon]] of Object.entries(STATION_COORDS)) {
     const id = parseInt(idStr);
+    if (!S[id]) continue;
     if (HIDDEN_STATIONS.has(id)) continue;
     const g = grpData[id];
     if (!byGrp[g]) byGrp[g] = { lat, lon, names: new Set(), lines: [] };
@@ -127,6 +149,7 @@ function pickArea(lat, lon) {
   const nearby = [];
   for (const [idStr, [sLat, sLon]] of Object.entries(STATION_COORDS)) {
     const id = parseInt(idStr);
+    if (!S[id]) continue;
     if (HIDDEN_STATIONS.has(id)) continue;
     const dLat = (sLat - lat) * Math.PI / 180;
     const dLon = (sLon - lon) * Math.PI / 180;
